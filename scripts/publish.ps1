@@ -8,10 +8,11 @@ function Checked([scriptblock]$Command) {
 Push-Location $root
 try {
     if (!(Test-Path '.tools/bin/avs3Encoder.exe') -or !(Test-Path '.venv/Scripts/python.exe')) {
-        & "$PSScriptRoot/bootstrap.ps1"
+        & "$PSScriptRoot/bootstrap.ps1" -DotNet $DotNet
     }
+    & "$PSScriptRoot/build-cavern.ps1" -DotNet $DotNet
     # A fresh versioned staging folder prevents stale DLLs or overwritten builds.
-    $stage = Join-Path $root ('dist/ADM-to-AV3S-v0.2.0-win-x64-' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
+    $stage = Join-Path $root ('dist/ADM-to-AV3S-v0.3.0-win-x64-' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
     New-Item -ItemType Directory -Force $stage | Out-Null
     Checked { & $DotNet publish src/AdmToAv3s/AdmToAv3s.csproj -c Release -p:Platform=x64 -o $stage }
     # WinUI's C++ DLLs need the app-local VC runtime on a clean Windows install.
@@ -28,6 +29,7 @@ try {
     Copy-Item backend/av3s/*.py "$stage/backend/av3s"
     New-Item -ItemType Directory -Force "$stage/tools" | Out-Null
     Copy-Item .tools/bin/avs3Encoder.exe "$stage/tools/avs3Encoder.exe"
+    Copy-Item -Recurse .tools/cavern-export "$stage/tools/cavern"
     Copy-Item README.md,LICENSE,THIRD_PARTY_NOTICES.md $stage
     Copy-Item -Recurse licenses "$stage/licenses"
     $zip = Join-Path $root '.tools/python-3.12.10-embed-amd64.zip'

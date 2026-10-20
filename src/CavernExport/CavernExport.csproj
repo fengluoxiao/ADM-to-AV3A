@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <CavernSource Condition="'$(CavernSource)' == ''">$(MSBuildThisFileDirectory)../../.tools/Cavern</CavernSource>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="$(CavernSource)/Cavern.Format/Cavern.Format.csproj" />
+  </ItemGroup>
+</Project>

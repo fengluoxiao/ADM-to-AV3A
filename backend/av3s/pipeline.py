@@ -34,7 +34,7 @@ def inspect(input_path, metadata=None):
 
 
 def convert(input_path, output_path, metadata=None, tags=None, encoder=None, start=0,
-            duration=None, cancel_file=None, spatial_reduction=False, emit=lambda **_: None):
+            duration=None, cancel_file=None, spatial_reduction=False, source_context=None, emit=lambda **_: None):
     wave, scene, info = inspect(input_path, metadata)
     if wave.channels > 16 and not spatial_reduction:
         raise ValueError(f'已读取 {wave.channels} 路 ADM：{len(scene.bed)} 路声床＋{scene.objects} 路对象。'
@@ -42,6 +42,8 @@ def convert(input_path, output_path, metadata=None, tags=None, encoder=None, sta
                          '如接受合并对象和位置近似，请明确开启 --spatial-reduction。')
     output = Path(output_path).resolve()
     protected = [Path(p).resolve() for p in (input_path, metadata, tags) if p]
+    if source_context:
+        protected.append(Path(source_context['input']).resolve())
     if output in protected:
         raise ValueError('输出路径不能覆盖输入文件。')
     if output.suffix.lower() != '.m4a':
@@ -64,6 +66,12 @@ def convert(input_path, output_path, metadata=None, tags=None, encoder=None, sta
     source_meta = Path(metadata).read_bytes() if metadata else wave.chunks[b'axml']
     meta_suffix = '.source.scene.jsonl' if metadata and Path(metadata).suffix.lower() == '.jsonl' else '.source.adm.xml'
     backups = [(output.with_suffix(meta_suffix), source_meta)]
+    if metadata and b'axml' in wave.chunks:
+        suffix = '.source.embedded.adm.xml' if meta_suffix == '.source.adm.xml' else '.source.adm.xml'
+        backups.append((output.with_suffix(suffix), wave.chunks[b'axml']))
+    if source_context:
+        backups.append((output.with_suffix('.source.cavern.json'),
+                        (json.dumps(source_context, ensure_ascii=False, indent=2) + '\n').encode('utf-8')))
     for kind in (b'chna', b'dbmd', b'bext', b'iXML', b'LIST'):
         if kind in wave.chunks:
             backups.append((output.with_suffix('.source.' + kind.decode('ascii') + '.bin'), wave.chunks[kind]))
@@ -185,6 +193,9 @@ def convert(input_path, output_path, metadata=None, tags=None, encoder=None, sta
                       encoder_source='https://github.com/Dreamello/av3a',
                       encoder_commit='b44b5321862385a06ad6c427de5791e18f16c16b',
                       validation=validation)
+        if source_context:
+            report.update(input=source_context['input'], cavern_import=source_context,
+                          start_samples=source_context['presentation_start_samples'])
         report['source_metadata_sha256'] = hashlib.sha256(source_meta).hexdigest()
         report['metadata_backups'] = [dict(path=str(path), sha256=hashlib.sha256(content).hexdigest())
                                      for path, content in backups]

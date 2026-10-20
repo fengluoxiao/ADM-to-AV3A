@@ -1,4 +1,4 @@
-param([switch]$SkipPython)
+param([switch]$SkipPython, [string]$DotNet = 'dotnet')
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
 function Checked([scriptblock]$Command) {
@@ -32,5 +32,6 @@ try {
         if (!(Test-Path .venv/Scripts/python.exe)) { Checked { python -m venv .venv } }
         Checked { & .venv/Scripts/python.exe -m pip --disable-pip-version-check install -e . }
     }
-    Write-Host 'Ready: native Windows encoder + Python backend.'
+    & "$PSScriptRoot/build-cavern.ps1" -DotNet $DotNet
+    Write-Host 'Ready: native Windows encoder + Cavern object importer + Python backend.'
 } finally { Pop-Location }

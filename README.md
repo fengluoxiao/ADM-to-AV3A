@@ -2,12 +2,14 @@
 
 **WinUI 3 + Python 的 Audio Vivid 对象音频制作工具。**
 
-输入 ADM/BW64 母版，或 WAV＋单独空间元数据，输出带 `av3a` 音轨的 `.m4a`。容量内保留独立对象音频、动态位置、增益与受支持的尺寸信息。超出容量时可显式启用 JOCForge 聚类，合并声音并近似位置及混合增益。
+输入 Atmos M4A/MP4、E-AC-3 JOC 裸流、ADM/BW64 母版或 WAV＋单独空间元数据，输出带 `av3a` 音轨的 `.m4a`。容量内保留解码得到的独立对象音频、动态位置、增益与受支持的尺寸信息。超出容量时可显式启用 JOCForge 聚类，合并声音并近似位置及混合增益。
 
 ## 功能
 
 - WinUI 3 深色界面：文件选择、输入检查、区间转换、进度日志、取消、输出目录入口。
 - Windows 原生 AVS3-P3 LC 编码，不依赖 WSL、FFmpeg 或修改后的解码器。
+- 内置 Cavern 对象导入：直接选择可读取的 Apple Music Atmos M4A，自动解码 JOC 对象、动态位置、尺寸、增益与 LFE，再编码 Vivid。M4A 标签自动复制；外置元数据留空即可。
+- 可单独导出 Float32 对象 WAV（Cavern 内嵌位置 ADM）、同名 `.scene.jsonl` 和 `.export.json`，供编辑或后续编码。
 - 48 kHz，96 kbps / 载体；读取最多 128 路，编码最多 16 路。支持 2.0、5.1、7.1.2 DirectSpeakers 声床、独立对象和一个单独 LFE。
 - Logic Pro ADM：支持 `RC_` 声床标签、省略 Cartesian Z、非零跳变插值长度及一采样时间取整误差。
 - JOCForge 空间缩减：非 LFE 声床和对象共同缩减到最多 15 个聚类对象，LFE 独立保留；默认关闭。
@@ -16,10 +18,12 @@
 - 同时保存原始空间元数据和 JSON 转换报告。已有文件不会被覆盖。
 - Python CLI 与 WinUI 使用同一条转换链路，通过 UTF-8 JSON Lines 传递事件。
 
-## 输入范围（v0.2）
+## 输入范围（v0.3）
 
 | 输入 | 支持情况 |
 |---|---|
+| Atmos M4A / MP4 | 一条未加密 `ec-3` 音轨；48 kHz；支持一段正常速率的 MP4 edit list，保留源时间裁剪 |
+| E-AC-3 JOC 裸流 | `.eac3` / `.ec3`；必须成功读出 JOC 和 OAMD，不回退成普通多声道 |
 | RIFF / RF64 / BW64 | PCM 16/24/32-bit、Float32；48 kHz；1–128 声道；超出 16 路需显式聚类 |
 | 内嵌 ADM | 读取 `axml`＋`chna`，包括音频 data 后方的元数据块 |
 | 外置 ADM XML | WAV 必须含 `chna`，通过 TrackUID → TrackFormat/StreamFormat → ChannelFormat 或直接 ChannelFormat 映射 |
@@ -28,7 +32,22 @@
 | 独立 LFE | 一个 LFE，映射到静态 DirectSpeakers LFE；源增益写入该载体 PCM |
 | Cavern JSONL | 与前期导出的 `*.scene.jsonl` 格式兼容；支持归一化 `size` |
 
-HOA、Matrix、其他 DirectSpeakers 布局、嵌套对象、多节目、交互参数、ADM 非零 extent、未覆盖完整音频的块等会报错。不会把未知映射猜成固定声床。Atmos M4A **不是直接输入格式**；需先在外部导出对象 WAV＋ADM/scene。
+HOA、Matrix、其他 DirectSpeakers 布局、嵌套对象、多节目、交互参数、ADM 非零 extent、未覆盖完整音频的块等会报错。不会把未知映射猜成固定声床。普通 AAC/ALAC、Audio Vivid 和加密 M4A 不属于 Cavern JOC 导入范围；TrueHD 不在此版本导入范围内。
+
+## 直接转换 Apple Music Atmos 文件
+
+在 WinUI 中选择已下载且可读取的 Atmos M4A，外置元数据留空，点击“检查输入”后转换即可。不需要事先准备 ADM。源 M4A 存在 `udta` 时自动复制封面、歌词和歌曲信息；选择其他标签来源可覆盖此默认行为。16 路以内的 JOC 解码结果不需要启用聚类。
+
+“单独导出 Atmos 对象 WAV＋元数据”会让你选择输出目录，使用输入文件名加 `(Cavern objects).wav` 保存。转换区间设置同样生效。再次导入该 WAV 时选择同名 JSONL：它保存源增益、尺寸及 LFE 标记，优先于 Cavern 的内嵌位置 ADM。
+
+```powershell
+./.venv/Scripts/python.exe -m av3s.cli convert --input atmos.m4a --output vivid.m4a
+./.venv/Scripts/python.exe -m av3s.cli export --input atmos.m4a --output objects.wav --start 30 --duration 10
+```
+
+导入采用未修改的 [Cavern](https://github.com/VoidXH/Cavern) 库，作者为 [Bence Sgánetz](https://en.sbence.hu/)。Cavern 使用[自定义许可](licenses/Cavern.txt)，并非 MIT；完整条款和署名随便携包附带，见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。JOC 是有损对象重建，得到的对象不等于制作阶段的原始 ADM。遇到稀疏 JOC 兼容处理时会显示提示并记录 `sparse_workaround`。
+
+导出端每 256 采样获取对象和空间状态，转换端仍按 1024 采样写入 Vivid 元数据；MP4 起始裁剪及区间截取使用连续预热、固定块缓存，保留滤波历史并准确截取 PCM。转换报告和 `.source.cavern.json` 记录组件版本、裁剪、采样间隔和兼容处理，提取的 JSONL 和 Cavern 生成的 ADM 另外备份。它们是解码后的表示，不声称复制 Atmos 的全部专有元数据。取消或失败时不发布临时导出。
 
 AVS3 空间信息有量化：XYZ 为 8/6/4 bit，extent 为 7/5/4 bit，gain 为 7 bit、范围 0–6；动态元数据按 1024 采样帧采样。JSONL 更新按时间保持，ADM 块按其持续时间插值。原始 XML/JSONL 以及存在的 chna、dbmd、bext、iXML、LIST 块另外逐字节备份并记录 SHA-256；保留 dbmd 备份不代表 Dolby 专有渲染参数已映射进 Vivid。参考编码器内部使用 16-bit PCM，普通模式拒绝超范围 PCM；聚类模式必要时统一降低全场景增益避免削波。
 
@@ -100,6 +119,6 @@ JSONL 每行示例（声道顺序必须与 WAV 完全一致；坐标 X 向右、
 ./scripts/publish.ps1
 ```
 
-打包脚本会生成 `dist/ADM-to-AV3S-win-x64-时间戳.zip`，内含 WinUI、.NET/Windows App SDK 自包含文件、Python 嵌入式运行时和编码器；解压后运行 `AdmToAv3s.exe`，无需另装 Python 或 WSL。脚本会先用包内运行时做一次完整短音频转换。构建需要联网恢复 NuGet/Python 包。GitHub Actions 会编译界面并运行真实编码测试。
+打包脚本会生成 `dist/ADM-to-AV3S-v0.3.0-win-x64-时间戳.zip`，内含 WinUI、.NET/Windows App SDK 自包含文件、Python 嵌入式运行时、Cavern 导出组件和编码器；解压后运行 `AdmToAv3s.exe`，无需另装 Python、.NET 或 WSL。脚本会先用包内运行时做一次完整短音频转换。构建需要 .NET 8 SDK 和联网恢复 NuGet/Python 包。`scripts/build-cavern.ps1` 可单独重建导入组件；bootstrap 和 publish 会自动调用。GitHub Actions 会编译界面并运行真实编码测试。
 
 仓库不含私人音乐、之前转换的歌曲、开发机路径或外部编码器二进制。原始项目代码使用 MIT，JOCForge 移植核心使用 Apache-2.0；外部 AVS3 参考编码器受其自身 UWA Code Sharing Policy 约束，详见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。

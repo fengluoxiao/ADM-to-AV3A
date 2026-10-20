@@ -64,12 +64,13 @@ public sealed partial class MainWindow : Window
 
     private async void BrowseInput(object sender, RoutedEventArgs e)
     {
-        if (await Pick(".wav", ".bw64", ".rf64") is string path)
+        if (await Pick(".wav", ".bw64", ".rf64", ".m4a", ".mp4", ".eac3", ".ec3") is string path)
         {
             InputBox.Text = path;
             OutputBox.Text = Path.Combine(Path.GetDirectoryName(path)!, Path.GetFileNameWithoutExtension(path) + " (Audio Vivid).m4a");
             string sidecar = Path.ChangeExtension(path, ".scene.jsonl");
-            MetadataBox.Text = File.Exists(sidecar) ? sidecar : "";
+            bool compressed = new[] { ".m4a", ".mp4", ".eac3", ".ec3" }.Contains(Path.GetExtension(path).ToLowerInvariant());
+            MetadataBox.Text = !compressed && File.Exists(sidecar) ? sidecar : "";
         }
     }
     private async void BrowseMetadata(object sender, RoutedEventArgs e) { if (await Pick(".xml", ".axml", ".jsonl") is string p) MetadataBox.Text = p; }
@@ -94,7 +95,7 @@ public sealed partial class MainWindow : Window
 
     private List<string> Arguments(string command)
     {
-        if (!File.Exists(InputBox.Text)) throw new InvalidOperationException("请选择有效的 WAV 母版。");
+        if (!File.Exists(InputBox.Text)) throw new InvalidOperationException("请选择有效的母版或 Atmos 文件。");
         var args = new List<string> { "-m", "av3s.cli", command, "--input", Path.GetFullPath(InputBox.Text) };
         if (!string.IsNullOrWhiteSpace(MetadataBox.Text)) args.AddRange(new[] { "--metadata", Path.GetFullPath(MetadataBox.Text) });
         return args;
@@ -107,6 +108,38 @@ public sealed partial class MainWindow : Window
         catch (Exception ex) { ShowError(ex.Message); }
     }
 
+    private async void ExportObjects(object sender, RoutedEventArgs e)
+    {
+        if (busy) return;
+        try
+        {
+            var args = Arguments("export");
+            var picker = new FolderPicker();
+            InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(this));
+            picker.FileTypeFilter.Add("*");
+            var folder = await picker.PickSingleFolderAsync();
+            if (folder == null) return;
+            string output = Path.Combine(folder.Path, Path.GetFileNameWithoutExtension(InputBox.Text) + " (Cavern objects).wav");
+            args.AddRange(new[] { "--output", output });
+            AddRangeArguments(args);
+            await Run(args, true);
+        }
+        catch (Exception ex) { ShowError(ex.Message); }
+    }
+
+    private void AddRangeArguments(List<string> args)
+    {
+        if (!double.TryParse(StartBox.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out double start) || !double.IsFinite(start) || start < 0)
+            throw new InvalidOperationException("起始时间必须是非负秒数（小数点使用 .）。");
+        args.AddRange(new[] { "--start", start.ToString(CultureInfo.InvariantCulture) });
+        if (!string.IsNullOrWhiteSpace(DurationBox.Text))
+        {
+            if (!double.TryParse(DurationBox.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out double duration) || !double.IsFinite(duration) || duration <= 0)
+                throw new InvalidOperationException("时长必须大于 0。");
+            args.AddRange(new[] { "--duration", duration.ToString(CultureInfo.InvariantCulture) });
+        }
+    }
+
     private async void StartConversion(object sender, RoutedEventArgs e)
     {
         if (busy) return;
@@ -116,15 +149,7 @@ public sealed partial class MainWindow : Window
             if (string.IsNullOrWhiteSpace(OutputBox.Text)) throw new InvalidOperationException("请选择输出路径。");
             if (File.Exists(OutputBox.Text)) throw new InvalidOperationException("输出文件已存在，请使用新的文件名。");
             args.AddRange(new[] { "--output", Path.GetFullPath(OutputBox.Text), "--encoder", EncoderBox.Text });
-            if (!double.TryParse(StartBox.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out double start) || !double.IsFinite(start) || start < 0)
-                throw new InvalidOperationException("起始时间必须是非负秒数（小数点使用 .）。");
-            args.AddRange(new[] { "--start", start.ToString(CultureInfo.InvariantCulture) });
-            if (!string.IsNullOrWhiteSpace(DurationBox.Text))
-            {
-                if (!double.TryParse(DurationBox.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out double duration) || !double.IsFinite(duration) || duration <= 0)
-                    throw new InvalidOperationException("时长必须大于 0。");
-                args.AddRange(new[] { "--duration", duration.ToString(CultureInfo.InvariantCulture) });
-            }
+            AddRangeArguments(args);
             if (!string.IsNullOrWhiteSpace(TagsBox.Text)) args.AddRange(new[] { "--tags", Path.GetFullPath(TagsBox.Text) });
             if (ReductionBox.IsChecked == true) args.Add("--spatial-reduction");
             await Run(args, true);
@@ -135,15 +160,15 @@ public sealed partial class MainWindow : Window
     private async Task Run(List<string> args, bool conversion)
     {
         busy = true;
-        ConvertButton.IsEnabled = InspectButton.IsEnabled = false;
-        CancelButton.IsEnabled = conversion;
+        ConvertButton.IsEnabled = InspectButton.IsEnabled = ExportButton.IsEnabled = false;
+        CancelButton.IsEnabled = true;
         OpenButton.IsEnabled = false;
         Notice.IsOpen = false;
         LogBox.Text = "";
         Progress.Value = 0;
         StatusText.Text = conversion ? "开始转换…" : "检查输入…";
         cancelFile = Path.Combine(Path.GetTempPath(), "av3s-cancel-" + Guid.NewGuid().ToString("N"));
-        if (conversion) args.AddRange(new[] { "--cancel-file", cancelFile });
+        args.AddRange(new[] { "--cancel-file", cancelFile });
         var psi = new ProcessStartInfo(PythonBox.Text.Trim())
         {
             WorkingDirectory = home, UseShellExecute = false, CreateNoWindow = true,
@@ -183,7 +208,9 @@ public sealed partial class MainWindow : Window
                         string layout = ev.GetProperty("bed_layout").GetString() ?? "无";
                         SummaryText.Text = $"{ev.GetProperty("objects").GetInt32()} 个独立对象 · {bed} 路声床（{layout}）\n{channels} 路 PCM 轨道 · 48 kHz\n{ev.GetProperty("seconds").GetDouble():F2} 秒 · {ev.GetProperty("metadata_updates").GetInt32()} 个空间更新时间\n" +
                             (fits ? $"{ev.GetProperty("bitrate").GetInt32() / 1000} kbps 总码率" : "超过当前 16 路编码容量");
-                        StatusText.Text = fits ? "输入检查通过" : "ADM 已读取；轨道数超过编码容量";
+                        if (ev.TryGetProperty("decoder", out _))
+                            SummaryText.Text += "\nAtmos JOC → Cavern 对象解码；转换时自动读取空间元数据和源标签。";
+                        StatusText.Text = fits ? "输入检查通过" : "输入已读取；轨道数超过编码容量";
                         if (!fits)
                         {
                             Notice.Severity = InfoBarSeverity.Warning;
@@ -195,6 +222,16 @@ public sealed partial class MainWindow : Window
                     }
                     if (type == "error") { ShowError(msg.GetString() ?? "转换失败"); terminalEvent = true; }
                     if (type == "cancelled") { terminalEvent = true; }
+                    if (type == "export_complete")
+                    {
+                        completedOutput = ev.GetProperty("output").GetString();
+                        OpenButton.IsEnabled = true;
+                        Notice.Severity = InfoBarSeverity.Success;
+                        Notice.Title = "对象导出完成";
+                        Notice.Message = "已保存 Float32 对象 WAV（内嵌位置 ADM）、scene.jsonl 和导出报告。再次编码时选同名 JSONL，以保留增益、尺寸及 LFE 标记。";
+                        Notice.IsOpen = true;
+                        terminalEvent = true;
+                    }
                     if (type == "complete")
                     {
                         completedOutput = ev.GetProperty("output").GetString();
@@ -222,7 +259,7 @@ public sealed partial class MainWindow : Window
             if (cancelFile != null) File.Delete(cancelFile);
             cancelFile = null;
             busy = false;
-            ConvertButton.IsEnabled = InspectButton.IsEnabled = true;
+            ConvertButton.IsEnabled = InspectButton.IsEnabled = ExportButton.IsEnabled = true;
             CancelButton.IsEnabled = false;
         }
     }
