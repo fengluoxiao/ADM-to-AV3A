@@ -17,5 +17,9 @@ jobs:
       - name: Test parser, metadata, cancellation and native conversion
         shell: pwsh
         run: ./.venv/Scripts/python.exe -m unittest discover -s tests -v
-      - name: Compile WinUI 3
-        run: dotnet build src/AdmToAv3s/AdmToAv3s.csproj -c Release -p:Platform=x64
+      - name: Publish WinUI 3 and verify application resources
+        shell: pwsh
+        run: |
+          dotnet publish src/AdmToAv3s/AdmToAv3s.csproj -c Release -p:Platform=x64 -o artifacts/ui
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (!(Test-Path artifacts/ui/AdmToAv3s.pri)) { throw 'Missing application PRI' }

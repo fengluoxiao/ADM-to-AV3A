@@ -25,7 +25,10 @@ public sealed partial class MainWindow : Window
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(TitleBar);
         var workArea = DisplayArea.GetFromWindowId(AppWindow.Id, DisplayAreaFallback.Primary).WorkArea;
-        AppWindow.Resize(new Windows.Graphics.SizeInt32(Math.Min(1180, workArea.Width - 32), Math.Min(940, workArea.Height - 32)));
+        int width = Math.Min(1180, workArea.Width - 32);
+        int height = Math.Min(940, workArea.Height - 32);
+        AppWindow.Resize(new Windows.Graphics.SizeInt32(width, height));
+        AppWindow.Move(new Windows.Graphics.PointInt32(workArea.X + (workArea.Width - width) / 2, workArea.Y + (workArea.Height - height) / 2));
         AppWindow.TitleBar.ButtonBackgroundColor = Colors.Transparent;
         AppWindow.TitleBar.ButtonForegroundColor = Colors.White;
         home = FindHome();

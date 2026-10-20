@@ -19,4 +19,8 @@
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.4654" />
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools.MSIX" Version="1.7.20250829.1" />
   </ItemGroup>
+  <Target Name="PublishApplicationPri" AfterTargets="Publish">
+    <Error Condition="!Exists('$(OutDir)$(TargetName).pri')" Text="The application PRI was not generated." />
+    <Copy SourceFiles="$(OutDir)$(TargetName).pri" DestinationFolder="$(PublishDir)" />
+  </Target>
 </Project>
