@@ -50,6 +50,13 @@ class Scene:
     def pcm_gains(self, start, count, carriers):
         if self.gain_evaluator:
             return self.gain_evaluator(start, count, carriers)
+        if self.frames and not self.evaluator:
+            # JSONL states are held until the next update. Select whole gain
+            # intervals with NumPy instead of evaluating millions of samples
+            # individually for long object tracks.
+            states = np.asarray([[p.gain for p in frame] for frame in self.frames], dtype=np.float32)
+            indices = np.maximum(0, np.searchsorted(self.times, np.arange(start, start + count), side='right') - 1)
+            return states[:, carriers][indices]
         return np.array([[self.at(start + j)[i].gain for i in carriers]
                          for j in range(count)], dtype=np.float32)
 

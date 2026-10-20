@@ -28,6 +28,8 @@ BED_POSITIONS = {'L': (-1, 1, 0), 'R': (1, 1, 0), 'C': (0, 1, 0),
 def compatible_scene(scene):
     """Represent non-LFE bed roles as fixed objects for published decoders."""
     mapped = {i: label for i, label in scene.bed.items() if i != scene.lfe}
+    if not mapped:
+        return scene, []
     for label in mapped.values():
         if label not in BED_POSITIONS:
             raise ValueError(f'AC-4 兼容模式暂不支持声床扬声器 {label}。')
@@ -60,7 +62,7 @@ def properties(point):
                 width=[point.size] * 3)
 
 
-def prepare_scene(scene, first, samples, config, timeline, bitrate, check):
+def prepare_scene(scene, first, samples, config, timeline, bitrate, check, compatible=True):
     objects = []
     for i, point in enumerate(scene.at(first)):
         item = properties(point)
@@ -72,7 +74,7 @@ def prepare_scene(scene, first, samples, config, timeline, bitrate, check):
             item['bed'] = BED[scene.bed[i]]
         objects.append(item)
     config.write_text(json.dumps(dict(channels=scene.channels, samples=samples,
-        bitrate_kbps=bitrate, objects=objects)), encoding='ascii')
+        bitrate_kbps=bitrate, compatible=compatible, objects=objects)), encoding='ascii')
     previous = [properties(p) for p in scene.at(first)]
     updates, error_squared, maximum = 0, 0., 0.
     with timeline.open('w', encoding='ascii') as dst:
@@ -149,11 +151,11 @@ def unpack_stream(stream, packets, check):
     return sizes, dict(frames=len(sizes), crc_failures=0, elementary_sha256=digest.hexdigest())
 
 
-def encode(wave, scene, read_pcm, first, samples, work, encoder, bitrate, udta, check, emit):
+def encode(wave, scene, read_pcm, first, samples, work, encoder, bitrate, udta, check, emit, compatible=True):
     config, timeline, pcm, stream, receipt = [work / p for p in
         ('ac4-config.json', 'ac4-scene.jsonl', 'ac4-input.f32', 'output.ac4', 'ac4-result.json')]
     emit(type='progress', phase='prepare', progress=10, message='AC-4：准备对象音频与空间元数据')
-    metadata = prepare_scene(scene, first, samples, config, timeline, bitrate, check)
+    metadata = prepare_scene(scene, first, samples, config, timeline, bitrate, check, compatible)
     peak = 0.
     carriers = list(range(scene.channels))
     with pcm.open('wb') as dst:
@@ -209,17 +211,28 @@ def encode(wave, scene, read_pcm, first, samples, work, encoder, bitrate, udta, 
             proc.wait()
     check()
     result = json.loads(receipt.read_text(encoding='utf-8'))
-    emit(type='progress', phase='verify', progress=90, message='AC-4：逐帧校验 CRC，写入 dac4 与 M4A 时间线')
+    emit(type='progress', phase='verify', progress=90, message='AC-4：逐帧检查对象数量、CRC，写入 dac4 与 MP4 时间线')
     packets = work / 'ac4-packets.bin'
     sizes, validation = unpack_stream(stream, packets, check)
     if len(sizes) != result['frames'] or result['b_static_dmx'] is not False:
         raise ValueError('AC-4 输出未满足 A-JOC 对象配置。')
+    topology = result.get('topology')
+    if not topology:
+        raise ValueError('AC-4 编码组件过旧，未返回实际码流对象数量；请更新完整便携包或重新构建组件。')
+    if (topology['fullband_upmix_signals'] != scene.channels - int(scene.lfe is not None)
+            or topology['lfe'] != (scene.lfe is not None)):
+        raise ValueError('AC-4 实际码流对象数量或 LFE 标记与输入不符。')
+    sda_structure = 1 <= topology['fullband_upmix_signals'] <= 20 and not topology['bed_signals'] and not topology['isf_signals']
+    if compatible and not sda_structure:
+        raise ValueError('AC-4 码流超出 SDA 的结构限制；全频重建信号须不超过 20 路，且不能使用原生声床。')
     delay = result['encoder_delay_samples'] + result['decoder_delay_samples']
     staged = work / 'output.m4a'
     validation.update(mux(packets, staged, scene.channels, len(sizes), samples, udta,
         ac4=dict(delay=delay, bitrate=bitrate * 1000, dac4=bytes(result['dac4']),
                  sizes=sizes, sync_samples=result['sync_samples'])))
-    validation.update(codec_string=result['codec_string'], b_static_dmx=False)
+    validation.update(codec_string=result['codec_string'], b_static_dmx=False,
+                      ac4_topology=topology, topology_checked_frames=len(sizes),
+                      sda_structure_compatible=sda_structure)
     binary_hash = hashlib.sha256(encoder.read_bytes()).hexdigest()
     manifest_path = encoder.with_name('build.json')
     manifest = json.loads(manifest_path.read_text(encoding='utf-8-sig')) if manifest_path.is_file() else {}

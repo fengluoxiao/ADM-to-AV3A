@@ -55,19 +55,29 @@ public sealed partial class MainWindow : Window
     {
         BitrateBox.Visibility = IsAc4 ? Visibility.Visible : Visibility.Collapsed;
         Ac4NativeBox.Visibility = IsAc4 ? Visibility.Visible : Visibility.Collapsed;
-        FormatBadge.Text = IsAc4 ? "AC-4 A-JOC · M4A" : "AUDIO VIVID · M4A";
+        FormatBadge.Text = IsAc4 ? "AC-4 A-JOC · MP4" : "AUDIO VIVID · M4A";
+        OutputBox.PlaceholderText = IsAc4 ? "输出 .mp4 文件（也支持 .m4a）" : "输出 .m4a 文件";
         ReductionLabel.Text = IsAc4
             ? $"允许 JOCForge 聚类：超出 {(NativeAc4 ? 64 : 20)} 路时，非 LFE 声床＋对象缩减为最多 {(NativeAc4 ? 63 : 19)} 个对象"
             : "允许 JOCForge 聚类：超出 16 路时，非 LFE 声床＋对象缩减为最多 15 个对象";
         FormatDetails.Text = IsAc4
-            ? (NativeAc4 ? "AC-4 A-JOC 原生模式：合计最多 64 路，保留声床角色。部分解码器不支持原生声床或高对象数；请用兼容模式测试播放。" : "AC-4 A-JOC 兼容模式：合计最多 20 路；LFE 独立，其他声床转为固定位置对象（位置近似）。对象声音由下混信号有损重建。")
+            ? (NativeAc4 ? "AC-4 原生模式：最多 64 路。SDA 当前无法解码超过 20 路全频重建信号或原生声床；需要在 SDA 播放时请取消此选项。" : "AC-4 A-JOC 兼容模式：合计最多 20 路；LFE 独立，其他声床转为固定位置对象（位置近似）。对象声音由下混信号有损重建。")
             : "读取最多 128 路 ADM，支持 Logic Pro 声床与位置自动化。Audio Vivid 最多 16 路，支持 2.0、5.1、7.1.2 声床＋对象。";
         FormatFooter.Text = IsAc4 ? "48 kHz  /  AC-4 A-JOC  /  Float32 输入" : "48 kHz  /  LC  /  96 kbps 每载体";
         if (!string.IsNullOrWhiteSpace(OutputBox.Text))
-            OutputBox.Text = OutputBox.Text.Replace(IsAc4 ? " (Audio Vivid).m4a" : " (AC-4 A-JOC).m4a",
-                                                   IsAc4 ? " (AC-4 A-JOC).m4a" : " (Audio Vivid).m4a");
+        {
+            if (IsAc4) OutputBox.Text = OutputBox.Text.Replace(" (Audio Vivid).m4a", " (AC-4 A-JOC).mp4");
+            else OutputBox.Text = OutputBox.Text.Replace(" (AC-4 A-JOC).mp4", " (Audio Vivid).m4a")
+                                               .Replace(" (AC-4 A-JOC).m4a", " (Audio Vivid).m4a");
+        }
         SummaryText.Text = "输出格式已更新，请检查输入。";
-        Notice.IsOpen = false;
+        Notice.IsOpen = IsAc4 && NativeAc4;
+        if (Notice.IsOpen)
+        {
+            Notice.Severity = InfoBarSeverity.Warning;
+            Notice.Title = "原生模式不保证 SDA 兼容";
+            Notice.Message = "超过 20 路全频信号或含原生声床时，SDA 会拒绝解码。用于 SDA 请取消原生模式；超容量输入需开启空间聚类。";
+        }
     }
 
     private static string FindHome()
@@ -97,7 +107,7 @@ public sealed partial class MainWindow : Window
         if (await Pick(".wav", ".bw64", ".rf64", ".m4a", ".mp4", ".eac3", ".ec3", ".mhas", ".mha", ".mhm") is string path)
         {
             InputBox.Text = path;
-            OutputBox.Text = Path.Combine(Path.GetDirectoryName(path)!, Path.GetFileNameWithoutExtension(path) + (IsAc4 ? " (AC-4 A-JOC).m4a" : " (Audio Vivid).m4a"));
+            OutputBox.Text = Path.Combine(Path.GetDirectoryName(path)!, Path.GetFileNameWithoutExtension(path) + (IsAc4 ? " (AC-4 A-JOC).mp4" : " (Audio Vivid).m4a"));
             string sidecar = Path.ChangeExtension(path, ".scene.jsonl");
             bool compressed = new[] { ".m4a", ".mp4", ".eac3", ".ec3", ".mhas", ".mha", ".mhm" }.Contains(Path.GetExtension(path).ToLowerInvariant());
             MetadataBox.Text = !compressed && File.Exists(sidecar) ? sidecar : "";
@@ -115,7 +125,7 @@ public sealed partial class MainWindow : Window
         if (folder != null)
         {
             string name = Path.GetFileName(OutputBox.Text);
-            OutputBox.Text = Path.Combine(folder.Path, string.IsNullOrWhiteSpace(name) ? "Audio Vivid.m4a" : name);
+            OutputBox.Text = Path.Combine(folder.Path, string.IsNullOrWhiteSpace(name) ? (IsAc4 ? "AC-4 A-JOC.mp4" : "Audio Vivid.m4a") : name);
         }
     }
     private void InputChanged(object sender, TextChangedEventArgs e)
@@ -285,11 +295,13 @@ public sealed partial class MainWindow : Window
                         bool reduced = ev.TryGetProperty("spatial_reduction", out var reduction) && reduction.GetBoolean();
                         Notice.Message = reduced
                             ? $"已输出 {ev.GetProperty("bed_channels").GetInt32()} 路独立 LFE＋{ev.GetProperty("encoded_objects").GetInt32()} 路 JOCForge 聚类对象。非 LFE 声床与对象已合并，位置及混合增益有变化；逐帧映射、原始元数据和误差报告已保存。"
-                            : "M4A、原始空间元数据和转换报告已保存。";
+                            : "输出音频、原始空间元数据和转换报告已保存。";
                         if (ev.TryGetProperty("output_codec", out var codec) && codec.GetString() == "ac4")
                         {
                             Notice.Severity = InfoBarSeverity.Warning;
                             Notice.Message += " AC-4 A-JOC 为实验编码：对象音频经有损重建，播放器兼容性待验证；详情见转换报告。";
+                            if (ev.TryGetProperty("sda_structure_compatible", out var compatible) && !compatible.GetBoolean())
+                                Notice.Message += " 此输出的对象数量或声床结构超出 SDA 当前支持范围；请用兼容模式重新转换。";
                         }
                         Notice.IsOpen = true;
                         terminalEvent = true;

@@ -73,6 +73,29 @@ int main(int argc, char** argv) {
         std::int64_t frames = 0;
         auto write = [&](const std::vector<ac4::EncodedFrame>& encoded) {
             for (const auto& frame : encoded) {
+                // Inspect the written TOC, not just the requested input count.
+                auto parsed = ac4::parse_raw_frame(frame.raw_ac4_frame);
+                if (!parsed) throw std::runtime_error("cannot parse encoded AC-4 TOC");
+                const ac4::AjocSubstreamInfo* ajoc = nullptr;
+                for (const auto& group : parsed->toc.substream_groups)
+                    for (const auto& ss : group.substreams)
+                        if (ss.ajoc) {
+                            if (ajoc) throw std::runtime_error("unexpected multiple A-JOC substreams");
+                            ajoc = &*ss.ajoc;
+                        }
+                if (!ajoc || ajoc->b_static_dmx) throw std::runtime_error("missing computed A-JOC downmix");
+                int beds = 0, isf = 0;
+                for (const auto& entry : ajoc->upmix_objects) {
+                    beds += entry.kind == ac4::ObjectKind::kBed && !entry.lfe;
+                    isf += entry.kind == ac4::ObjectKind::kIsf;
+                }
+                const json topology = {{"fullband_upmix_signals", ajoc->n_fullband_upmix_signals},
+                    {"fullband_downmix_signals", ajoc->n_fullband_dmx_signals},
+                    {"lfe", ajoc->b_lfe}, {"bed_signals", beds}, {"isf_signals", isf}};
+                if (frames == 0) result["topology"] = topology;
+                else if (result["topology"] != topology) throw std::runtime_error("encoded A-JOC topology changed");
+                if (cfg.value("compatible", false) && (ajoc->n_fullband_upmix_signals > 20 || beds || isf))
+                    throw std::runtime_error("encoded A-JOC exceeds compatible decoder limits");
                 if (frame.iframe) result["sync_samples"].push_back(frames + 1);
                 const auto bytes = ac4::sync_frame(frame.raw_ac4_frame, true);
                 output.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));

@@ -208,8 +208,9 @@ def convert_input(input_path, output_path, metadata=None, cavern=None, emit=lamb
     if not is_compressed(input_path):
         return convert(input_path, output_path, metadata, emit=emit, **kwargs)
     output = Path(output_path).resolve()
-    if output == Path(input_path).resolve() or output.suffix.lower() != '.m4a':
-        raise ValueError('输出必须是新的 .m4a 路径，不能覆盖输入。')
+    allowed = {'.m4a', '.mp4'} if kwargs.get('codec') == 'ac4' else {'.m4a'}
+    if output == Path(input_path).resolve() or output.suffix.lower() not in allowed:
+        raise ValueError('输出必须使用受支持的新路径（AC-4：.mp4 / .m4a；Vivid：.m4a），不能覆盖输入。')
     if output.exists() or output.with_suffix('.conversion.json').exists():
         raise ValueError('输出或报告文件已存在，请选择新文件名。')
     with tempfile.TemporaryDirectory(prefix='av3s-cavern-') as temp:

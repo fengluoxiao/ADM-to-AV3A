@@ -55,8 +55,9 @@ def convert(input_path, output_path, metadata=None, tags=None, encoder=None, sta
         protected.append(Path(source_context['input']).resolve())
     if output in protected:
         raise ValueError('输出路径不能覆盖输入文件。')
-    if output.suffix.lower() != '.m4a':
-        raise ValueError('输出扩展名必须是 .m4a。')
+    allowed = {'.m4a', '.mp4'} if codec == 'ac4' else {'.m4a'}
+    if output.suffix.lower() not in allowed:
+        raise ValueError('AC-4 输出扩展名必须是 .mp4 或 .m4a。' if codec == 'ac4' else '输出扩展名必须是 .m4a。')
     report_path = output.with_suffix('.conversion.json')
     if output.exists() or report_path.exists():
         raise ValueError('输出或报告文件已存在，请选择新文件名。')
@@ -141,7 +142,7 @@ def convert(input_path, output_path, metadata=None, tags=None, encoder=None, sta
         if codec == 'ac4':
             from .ac4 import encode
             staged, validation, details = encode(wave, scene, read_pcm, first, samples, work,
-                                                 encoder, bitrate, udta, check, emit)
+                                                 encoder, bitrate, udta, check, emit, compatible=not ac4_native)
             details.update(ac4_profile='native' if ac4_native else 'compatible objects',
                            bed_object_mapping=bed_mapping,
                            objects_preserved=info['objects'] if reduction is None else 0)

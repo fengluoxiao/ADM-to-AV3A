@@ -63,7 +63,7 @@ class Ac4Tests(unittest.TestCase):
 
     def test_native_m4a_bed_objects_tags_and_timeline(self):
         self.native()
-        output, tags = self.root / '成品.m4a', self.root / 'tags.m4a'
+        output, tags = self.root / '成品.mp4', self.root / 'tags.m4a'
         udta = box(b'udta', full(b'meta', bytes(4)))
         tags.write_bytes(box(b'ftyp', b'isom' + bytes(4)) + box(b'moov', udta))
         report = convert(self.wav, output, codec='ac4', tags=tags, start=.01, duration=.073)
@@ -71,6 +71,8 @@ class Ac4Tests(unittest.TestCase):
         self.assertEqual(report['encoded_objects'], 11)
         self.assertEqual(len(report['bed_object_mapping']), 9)
         self.assertEqual(report['validation']['crc_failures'], 0)
+        self.assertEqual(report['validation']['ac4_topology']['fullband_upmix_signals'], 11)
+        self.assertTrue(report['validation']['sda_structure_compatible'])
         self.assertEqual(report['output_samples'], 3504)
         self.assertTrue(report['source_gain_baked'])
         self.assertEqual(copy_tags(output), udta)
@@ -117,6 +119,31 @@ class Ac4Tests(unittest.TestCase):
         self.assertEqual(report['bed_channels_preserved'], 10)
         self.assertEqual(report['encoded_objects'], 2)
         self.assertEqual(report['bed_object_mapping'], [])
+        self.assertEqual(report['validation']['ac4_topology']['bed_signals'], 9)
+        self.assertFalse(report['validation']['sda_structure_compatible'])
+
+    def test_24_object_native_stream_is_marked_incompatible(self):
+        self.native()
+        logic_fixture(self.wav, objects=14)
+        sidecar = self.root / 'objects.jsonl'
+        sidecar.write_text(json.dumps(dict(sample=0, objects=[dict(x=i / 23 * 2 - 1) for i in range(24)])), encoding='utf-8')
+        output = self.root / 'native-24.mp4'
+        report = convert(self.wav, output, sidecar, codec='ac4', ac4_native=True)
+        self.assertEqual(report['validation']['ac4_topology']['fullband_upmix_signals'], 24)
+        self.assertFalse(report['validation']['sda_structure_compatible'])
+        self.assertEqual(report['validation']['topology_checked_frames'], report['validation']['frames'])
+        with self.assertRaisesRegex(ValueError, '20 路'):
+            convert(self.wav, self.root / 'compatible.mp4', sidecar, codec='ac4')
+
+    def test_jsonl_gain_holds_across_updates_and_cut(self):
+        from av3s.scene import load_jsonl
+        logic_fixture(self.wav, objects=0)
+        sidecar = self.root / 'gain.jsonl'
+        sidecar.write_text('\n'.join(json.dumps(dict(sample=t, objects=[dict(gain=g + i / 10) for i in range(10)]))
+                                      for t, g in [(0, .25), (5, .5), (8, 1)]), encoding='utf-8')
+        scene = load_jsonl(sidecar, Wave.open(self.wav))
+        np.testing.assert_allclose(scene.pcm_gains(3, 7, [2, 0]),
+            [[.45, .25]] * 2 + [[.7, .5]] * 3 + [[1.2, 1]] * 2)
 
     def test_reduction_to_19_objects_and_lfe(self):
         self.native()
@@ -128,6 +155,8 @@ class Ac4Tests(unittest.TestCase):
         self.assertTrue(report['spatial_reduction']['lossy'])
         self.assertEqual(len(report['spatial_reduction']['sources']), 65)
         self.assertEqual(report['validation']['crc_failures'], 0)
+        self.assertEqual(report['validation']['ac4_topology']['fullband_upmix_signals'], 19)
+        self.assertTrue(report['validation']['sda_structure_compatible'])
 
     def test_cancelled_encoding_publishes_nothing_and_existing_is_preserved(self):
         self.native()

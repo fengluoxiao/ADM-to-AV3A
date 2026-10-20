@@ -14,7 +14,7 @@ def main():
     if hasattr(sys.stdout, 'reconfigure'):
         sys.stdout.reconfigure(encoding='utf-8')
         sys.stderr.reconfigure(encoding='utf-8')
-    p = argparse.ArgumentParser(description='ADM / WAV / Atmos / MPEG-H 360RA → Audio Vivid / AC-4 A-JOC M4A')
+    p = argparse.ArgumentParser(description='ADM / WAV / Atmos / MPEG-H 360RA → Audio Vivid M4A / AC-4 A-JOC MP4')
     sub = p.add_subparsers(dest='command', required=True)
     for name in ('inspect', 'convert', 'export'):
         cmd = sub.add_parser(name)
