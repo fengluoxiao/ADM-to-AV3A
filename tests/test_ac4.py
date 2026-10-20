@@ -122,6 +122,40 @@ class Ac4Tests(unittest.TestCase):
         self.assertEqual(report['validation']['ac4_topology']['bed_signals'], 9)
         self.assertFalse(report['validation']['sda_structure_compatible'])
 
+    def test_19_objects_returning_after_silence_decode_without_history(self):
+        self.native()
+        decoder = ROOT / '.tools/macinac4/macinac4-v0.1.0-x86_64-pc-windows-msvc/macinac4.exe'
+        if not decoder.is_file():
+            self.skipTest('Published independent AC-4 decoder unavailable')
+        # Temporal prediction in the previous adapter failed on this scene:
+        # zero matrix rows disappear and later return without decoder history.
+        import wave
+        channels, samples = 19, 48000
+        t = np.arange(samples) / 48000
+        pcm = np.stack([.025 * np.sin(2 * np.pi * (173 + 83 * i) * t)
+                        for i in range(channels)], axis=1)
+        for i in range(channels):
+            pcm[:int((.12 + i % 5 * .031) * 48000), i] = 0
+        pcm[24000:30000] = 0
+        with wave.open(str(self.wav), 'wb') as dst:
+            dst.setparams((channels, 2, 48000, 0, 'NONE', 'not compressed'))
+            dst.writeframes((pcm * 32768).astype('<i2').tobytes())
+        sidecar = self.root / 'onsets.jsonl'
+        sidecar.write_text(json.dumps(dict(sample=0, objects=[
+            dict(x=i / 18 * 2 - 1, y=0, z=0) for i in range(channels)])), encoding='utf-8')
+        output = self.root / 'onsets.mp4'
+        report = convert(self.wav, output, sidecar, codec='ac4', bitrate=768)
+        self.assertEqual(report['validation']['iframe_interval'], 1)
+        decoded = self.root / 'onsets-decoded.wav'
+        result = subprocess.run([str(decoder), 'export-objects-pcm', str(output), '--output', str(decoded)],
+                                capture_output=True, text=True, encoding='utf-8', timeout=60)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        audio = Wave.open(decoded)
+        self.assertEqual((audio.samples, audio.channels), (samples, channels))
+        decoded_pcm = audio.read(0, samples)
+        self.assertTrue(np.isfinite(decoded_pcm).all())
+        self.assertGreater(float(np.max(np.abs(decoded_pcm))), .001)
+
     def test_24_object_native_stream_is_marked_incompatible(self):
         self.native()
         logic_fixture(self.wav, objects=14)

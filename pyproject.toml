@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "adm-to-av3s"
-version = "0.5.1"
+version = "0.5.2"
 description = "Atmos / 360RA / ADM to Audio Vivid M4A or AC-4 A-JOC MP4"
 requires-python = ">=3.11"
 dependencies = ["numpy>=1.26,<3", "defusedxml>=0.7.1,<1"]

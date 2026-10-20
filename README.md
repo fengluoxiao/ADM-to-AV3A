@@ -13,7 +13,7 @@ WinUI 的“输出格式”选择 **AC-4 A-JOC**，默认保存为 `.mp4`，避�
 | 兼容对象（默认） | 合计最多 20 路，LFE 独立；非 LFE 声床按扬声器角色映射成固定位置对象，属于位置近似，逐项记录 `bed_object_mapping`。超过容量需显式聚类，最多 19 个聚类对象＋一个 LFE。 |
 | 原生声床（实验选项） | 合计最多 64 路，直接写入原生 bed assignment、LFE 和动态对象。超过容量需显式聚类；目前部分独立解码器拒绝此声床语法或高对象数，不作为默认播放兼容方案。 |
 
-采用未修改的 [ICL Forge](https://github.com/iainchesworthlabs/iclforge) 提交 `315899937e5c337ab34e3e27471539b9810e3b5f`。`native/ac4` 是流式适配器，逐块提供 Float32 PCM，调用真实 A-JOC computed downmix 编码（`b_static_dmx=false`），没有改解码器。固定使用 ASPX，48 kHz / 2048 采样帧；源增益逐采样写入 PCM，超峰值时全场景统一降增益并记录。对象位置每 256 采样采样并以线性 ramp 写入；ADM X/Y 映射到 AC-4 的 `[0,1]` 房间坐标，Z 保留正负。X/Y 步长 1/62、Z 1/15、尺寸 1/31，存在量化及时间近似。Dolby 专有 dbmd 参数仅另存备份，不声称全量映射。
+采用未修改的 [ICL Forge](https://github.com/iainchesworthlabs/iclforge) 提交 `315899937e5c337ab34e3e27471539b9810e3b5f`。`native/ac4` 是流式适配器，逐块提供 Float32 PCM，调用真实 A-JOC computed downmix 编码（`b_static_dmx=false`），没有改解码器。固定使用 ASPX，48 kHz / 2048 采样帧；兼容模式逐帧设为 I-frame，使 A-JOC 矩阵使用频域编码，规避对象静音后重现时部分解码器缺少时间预测历史的问题；原生模式仍每 24 帧一个 I-frame。此选项会增加编码开销，同一码率下可用于音频的预算相应减少。源增益逐采样写入 PCM，超峰值时全场景统一降增益并记录。对象位置每 256 采样采样并以线性 ramp 写入；ADM X/Y 映射到 AC-4 的 `[0,1]` 房间坐标，Z 保留正负。X/Y 步长 1/62、Z 1/15、尺寸 1/31，存在量化及时间近似。Dolby 专有 dbmd 参数仅另存备份，不声称全量映射。
 
 封装写入真实 `dac4`、变长 sample table 和随机访问帧表，逐帧校验 AC-4 CRC，并重新解析每帧实际 TOC 检查全频重建信号数、LFE 和声床分配。兼容模式拒绝超过 20 路全频信号或原生声床结构；报告中的 `sda_structure_compatible` 仅表示这些结构符合已知限制，不代表每次转换均进行了独立解码验证。使用编码器报告的编码/解码延迟合计 4385 采样写入 edit list。报告另外记录编码组件 SHA-256、构建来源、输出模式、对象合并/声床映射与量化误差；误差统计不代表实测听感或 A-JOC 重建误差。
 
@@ -167,6 +167,6 @@ JSONL 每行示例（声道顺序必须与 WAV 完全一致；坐标 X 向右、
 ./scripts/publish.ps1
 ```
 
-打包脚本会生成 `dist/ADM-to-AV3A-v0.5.1-win-x64-时间戳.zip`，内含 WinUI、自包含运行时、Cavern / MPEG-H 导入组件、Vivid / AC-4 编码器和 AC-4 对应源码；解压后运行 `AdmToAv3s.exe`，无需另装 Python、.NET 或 WSL。脚本使用包内运行时分别测试两个输出。AC-4 组件会重建；Cavern / MPEG-H 已存在时复用，可传 `-RebuildImporters` 重建。开发构建需要较新的 VS 2022 C++ 工具（MSVC 14.44+）、.NET SDK 及联网恢复依赖。AC-4 当前构建启用 AVX2；Vivid 编码器仍使用标量 C。GitHub Actions 会编译界面并运行真实编码测试。
+打包脚本会生成 `dist/ADM-to-AV3A-v0.5.2-win-x64-时间戳.zip`，内含 WinUI、自包含运行时、Cavern / MPEG-H 导入组件、Vivid / AC-4 编码器和 AC-4 对应源码；解压后运行 `AdmToAv3s.exe`，无需另装 Python、.NET 或 WSL。脚本使用包内运行时分别测试两个输出。AC-4 组件会重建；Cavern / MPEG-H 已存在时复用，可传 `-RebuildImporters` 重建。开发构建需要较新的 VS 2022 C++ 工具（MSVC 14.44+）、.NET SDK 及联网恢复依赖。AC-4 当前构建启用 AVX2；Vivid 编码器仍使用标量 C。GitHub Actions 会编译界面并运行真实编码测试。
 
 仓库不含私人音乐、之前转换的歌曲或外部编码器二进制。原始应用代码使用 MIT，JOCForge 移植核心使用 Apache-2.0，AC-4 原生适配器使用 GPL-3.0-or-later；外部组件各自的条款见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。

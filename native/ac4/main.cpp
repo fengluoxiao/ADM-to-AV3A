@@ -35,6 +35,10 @@ int main(int argc, char** argv) {
         config.sample_rate_hz = 48000;
         config.frame_rate_index = 13;
         config.bitrate_kbps = cfg.at("bitrate_kbps").get<int>();
+        // Published full A-JOC decoders reject temporal matrix prediction
+        // after an object disappears and returns. I-frames use frequency
+        // coding throughout and avoid relying on that missing history.
+        config.iframe_interval = cfg.value("compatible", false) ? 1 : 24;
         config.experimental.objects = true;
         ac4::ObjectsConfig objects;
         objects.coding = ac4::ObjectCoding::kAjoc;
@@ -59,7 +63,8 @@ int main(int argc, char** argv) {
         json result = {{"frame_samples", 2048}, {"encoder_delay_samples", encoder->delay_samples()},
                        {"decoder_delay_samples", encoder->decoder_delay_samples()},
                        {"codec_string", ac4::rfc6381_codec_string(encoder->toc())},
-                       {"b_static_dmx", false}, {"frames", 0}};
+                       {"b_static_dmx", false}, {"frames", 0},
+                       {"iframe_interval", config.iframe_interval}};
         result["sync_samples"] = json::array();
         result["dac4"] = json::array();
         for (std::byte b : dac4) result["dac4"].push_back(std::to_integer<unsigned>(b));

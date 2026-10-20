@@ -225,6 +225,8 @@ def encode(wave, scene, read_pcm, first, samples, work, encoder, bitrate, udta, 
     sda_structure = 1 <= topology['fullband_upmix_signals'] <= 20 and not topology['bed_signals'] and not topology['isf_signals']
     if compatible and not sda_structure:
         raise ValueError('AC-4 码流超出 SDA 的结构限制；全频重建信号须不超过 20 路，且不能使用原生声床。')
+    if compatible and (result.get('iframe_interval') != 1 or result['sync_samples'] != list(range(1, len(sizes) + 1))):
+        raise ValueError('AC-4 编码组件未输出兼容的逐帧独立 A-JOC；请更新完整便携包或重新构建组件。')
     delay = result['encoder_delay_samples'] + result['decoder_delay_samples']
     staged = work / 'output.m4a'
     validation.update(mux(packets, staged, scene.channels, len(sizes), samples, udta,
@@ -232,7 +234,8 @@ def encode(wave, scene, read_pcm, first, samples, work, encoder, bitrate, udta, 
                  sizes=sizes, sync_samples=result['sync_samples'])))
     validation.update(codec_string=result['codec_string'], b_static_dmx=False,
                       ac4_topology=topology, topology_checked_frames=len(sizes),
-                      sda_structure_compatible=sda_structure)
+                      sda_structure_compatible=sda_structure,
+                      iframe_interval=result.get('iframe_interval'))
     binary_hash = hashlib.sha256(encoder.read_bytes()).hexdigest()
     manifest_path = encoder.with_name('build.json')
     manifest = json.loads(manifest_path.read_text(encoding='utf-8-sig')) if manifest_path.is_file() else {}
