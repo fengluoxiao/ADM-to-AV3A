@@ -3,7 +3,7 @@
  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
  Title="ADM to AV3S · v0.4.0">
  <Grid x:Name="Root" Background="#0D1320" RequestedTheme="Dark">
-  <Grid.RowDefinitions><RowDefinition Height="48"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+  <Grid.RowDefinitions><RowDefinition Height="48"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
   <Grid x:Name="TitleBar" Padding="24,0,0,0">
    <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
     <FontIcon Glyph="&#xE995;" FontSize="18" Foreground="{StaticResource AccentBrush}"/>
@@ -12,7 +12,8 @@
     <TextBlock Text="v0.4.0" FontSize="10" Foreground="#8795B0" VerticalAlignment="Center"/>
    </StackPanel>
   </Grid>
-  <ScrollViewer Grid.Row="1" Padding="32,16,32,24" HorizontalScrollBarVisibility="Disabled">
+  <InfoBar Grid.Row="1" x:Name="Notice" IsOpen="False" IsClosable="True" Margin="32,0"/>
+  <ScrollViewer Grid.Row="2" Padding="32,16,32,24" HorizontalScrollBarVisibility="Disabled">
    <StackPanel Spacing="22" MaxWidth="1180" HorizontalAlignment="Stretch">
     <StackPanel Spacing="8">
      <TextBlock Text="让空间，保留在声音里。" FontSize="30" FontWeight="SemiBold"/>
@@ -95,10 +96,9 @@
       </Border>
      </StackPanel>
     </Grid>
-    <InfoBar x:Name="Notice" IsOpen="False" IsClosable="True"/>
    </StackPanel>
   </ScrollViewer>
-  <Border Grid.Row="2" Background="#131B29" BorderBrush="#2B3548" BorderThickness="0,1,0,0" Padding="32,18">
+  <Border Grid.Row="3" Background="#131B29" BorderBrush="#2B3548" BorderThickness="0,1,0,0" Padding="32,18">
    <Grid ColumnSpacing="12"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
     <TextBlock Text="48 kHz  /  LC  /  96 kbps 每载体" Foreground="#8795B0" VerticalAlignment="Center"/>
     <Button Grid.Column="1" x:Name="CancelButton" Content="取消" Click="CancelConversion" IsEnabled="False" MinWidth="90"/>
