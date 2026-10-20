@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "adm-to-av3s"
-version = "0.3.0"
+version = "0.3.1"
 description = "Atmos JOC / ADM / WAV + scene to Audio Vivid M4A with Cavern import and JOCForge reduction"
 requires-python = ">=3.11"
 dependencies = ["numpy>=1.26,<3", "defusedxml>=0.7.1,<1"]

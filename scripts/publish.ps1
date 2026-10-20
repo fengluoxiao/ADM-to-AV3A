@@ -12,7 +12,7 @@ try {
     }
     & "$PSScriptRoot/build-cavern.ps1" -DotNet $DotNet
     # A fresh versioned staging folder prevents stale DLLs or overwritten builds.
-    $stage = Join-Path $root ('dist/ADM-to-AV3S-v0.3.0-win-x64-' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
+    $stage = Join-Path $root ('dist/ADM-to-AV3S-v0.3.1-win-x64-' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
     New-Item -ItemType Directory -Force $stage | Out-Null
     Checked { & $DotNet publish src/AdmToAv3s/AdmToAv3s.csproj -c Release -p:Platform=x64 -o $stage }
     # WinUI's C++ DLLs need the app-local VC runtime on a clean Windows install.

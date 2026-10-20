@@ -22,7 +22,7 @@
 
 | 输入 | 支持情况 |
 |---|---|
-| Atmos M4A / MP4 | 一条未加密 `ec-3` 音轨；48 kHz；支持一段正常速率的 MP4 edit list，保留源时间裁剪 |
+| Atmos M4A / MP4 | 一条未加密 `ec-3` 音轨；48 kHz；支持一段正常速率的 MP4 edit list，保留源时间裁剪；结尾超出实际音轨时取有效交集并记录差额 |
 | E-AC-3 JOC 裸流 | `.eac3` / `.ec3`；必须成功读出 JOC 和 OAMD，不回退成普通多声道 |
 | RIFF / RF64 / BW64 | PCM 16/24/32-bit、Float32；48 kHz；1–128 声道；超出 16 路需显式聚类 |
 | 内嵌 ADM | 读取 `axml`＋`chna`，包括音频 data 后方的元数据块 |
@@ -119,6 +119,6 @@ JSONL 每行示例（声道顺序必须与 WAV 完全一致；坐标 X 向右、
 ./scripts/publish.ps1
 ```
 
-打包脚本会生成 `dist/ADM-to-AV3S-v0.3.0-win-x64-时间戳.zip`，内含 WinUI、.NET/Windows App SDK 自包含文件、Python 嵌入式运行时、Cavern 导出组件和编码器；解压后运行 `AdmToAv3s.exe`，无需另装 Python、.NET 或 WSL。脚本会先用包内运行时做一次完整短音频转换。构建需要 .NET 8 SDK 和联网恢复 NuGet/Python 包。`scripts/build-cavern.ps1` 可单独重建导入组件；bootstrap 和 publish 会自动调用。GitHub Actions 会编译界面并运行真实编码测试。
+打包脚本会生成 `dist/ADM-to-AV3S-v0.3.1-win-x64-时间戳.zip`，内含 WinUI、.NET/Windows App SDK 自包含文件、Python 嵌入式运行时、Cavern 导出组件和编码器；解压后运行 `AdmToAv3s.exe`，无需另装 Python、.NET 或 WSL。脚本会先用包内运行时做一次完整短音频转换。构建需要 .NET 8 SDK 和联网恢复 NuGet/Python 包。`scripts/build-cavern.ps1` 可单独重建导入组件；bootstrap 和 publish 会自动调用。GitHub Actions 会编译界面并运行真实编码测试。
 
 仓库不含私人音乐、之前转换的歌曲、开发机路径或外部编码器二进制。原始项目代码使用 MIT，JOCForge 移植核心使用 Apache-2.0；外部 AVS3 参考编码器受其自身 UWA Code Sharing Policy 约束，详见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。

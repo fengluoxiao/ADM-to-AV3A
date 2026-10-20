@@ -139,9 +139,17 @@ def presentation(path, raw_samples):
             if start < 0 or (rate, fraction) != (1, 0) or not movie_scale:
                 raise ValueError('暂不支持 MP4 空白或变速 edit list。')
             length = round(duration * 48000 / movie_scale)
-            if length <= 0 or start >= raw_samples or start + length > raw_samples + 1:
-                raise ValueError('MP4 edit list 超出音轨。')
+            if length <= 0 or start >= raw_samples:
+                raise ValueError('MP4 edit list 没有与实际音轨重叠的有效区间。')
+            # Movie ticks can round the duration beyond the last media sample.
+            # Some muxers also leave the full track duration after adding a
+            # priming edit. Preserve the start and intersect with real media;
+            # never synthesize silence or read past the track to fill that tail.
             result.update(media_start_samples=start, samples=min(length, raw_samples - start), edit_list_applied=True)
+            if length > raw_samples - start:
+                result.update(requested_edit_samples=length,
+                              unavailable_tail_samples=length - (raw_samples - start),
+                              tail_policy='intersection with available media; no added samples')
     return result
 
 
@@ -153,6 +161,9 @@ def inspect_input(input_path, metadata=None, cavern=None, cancel_file=None, emit
     info = run('inspect', input_path, cavern=cavern, cancel_file=cancel_file, emit=emit)
     info.pop('type', None)
     timing = presentation(input_path, info['samples'])
+    if timing.get('unavailable_tail_samples'):
+        emit(type='progress', phase='inspect', progress=0,
+             message=f"MP4 时长已对齐实际音轨末尾（未读取超出的 {timing['unavailable_tail_samples']} 个采样）。")
     info.update(samples=timing['samples'], seconds=timing['samples'] / 48000, presentation=timing)
     return info
 

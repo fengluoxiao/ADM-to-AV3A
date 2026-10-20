@@ -42,8 +42,26 @@ class CavernTests(unittest.TestCase):
             presentation(self.container(edits=2), 10000)
         with self.assertRaisesRegex(ValueError, '变速'):
             presentation(self.container(rate=2), 10000)
-        with self.assertRaisesRegex(ValueError, '超出'):
-            presentation(self.container(), 4000)
+        with self.assertRaisesRegex(ValueError, '有效区间'):
+            presentation(self.container(), 3069)
+
+    def test_movie_tick_rounding_clamps_only_unavailable_tail(self):
+        for version in (0, 1):
+            # 100 movie ticks request 4800 samples. The track's real end is
+            # 16 samples earlier, within one tick at the 1000 Hz movie scale.
+            info = presentation(self.container(version=version), 3069 + 4784)
+            self.assertEqual(info['media_start_samples'], 3069)
+            self.assertEqual(info['samples'], 4784)
+            self.assertEqual(info['requested_edit_samples'], 4800)
+            self.assertEqual(info['unavailable_tail_samples'], 16)
+
+    def test_full_duration_edit_after_priming_preserves_start(self):
+        # Muxers sometimes retain the full media duration as edit duration,
+        # despite a nonzero media start. Only the overlapping media is exported.
+        info = presentation(self.container(), 4800)
+        self.assertEqual(info['media_start_samples'], 3069)
+        self.assertEqual(info['samples'], 1731)
+        self.assertEqual(info['unavailable_tail_samples'], 3069)
 
     def test_cancel_before_subprocess_and_no_overwrite(self):
         flag = self.root / 'cancel'
