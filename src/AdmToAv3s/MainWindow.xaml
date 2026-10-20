@@ -39,6 +39,10 @@
       <Border Style="{StaticResource Card}">
        <StackPanel Spacing="16">
         <TextBlock Text="02   输出设置" FontSize="18" FontWeight="SemiBold"/>
+        <CheckBox x:Name="ReductionBox" IsChecked="False">
+          <TextBlock Text="允许 JOCForge 聚类：超出 16 路时，非 LFE 声床＋对象缩减为最多 15 个对象" TextWrapping="Wrap"/>
+        </CheckBox>
+         <TextBlock Text="LFE 单独保留；聚类会合并声床与对象，近似位置并调整混合增益。原始 ADM、误差与逐帧映射会另存。" Foreground="#A8B5CB" TextWrapping="Wrap" FontSize="12"/>
         <Grid ColumnSpacing="8"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
          <TextBox x:Name="OutputBox" PlaceholderText="输出 .m4a 文件"/>
          <Button Grid.Column="1" Content="选择目录" Click="BrowseOutput"/>
@@ -70,7 +74,7 @@
         <TextBlock x:Name="SummaryText" Text="选择母版并检查输入后，在这里查看声道、对象数和时长。" Foreground="#A8B5CB" TextWrapping="Wrap" LineHeight="24"/>
         <Rectangle Height="1" Fill="#2B3548"/>
         <TextBlock Text="保留独立音频载体与空间位置；不渲染为固定声床。另存原始元数据与转换报告。" Foreground="#A8B5CB" TextWrapping="Wrap" LineHeight="23"/>
-        <TextBlock Text="v0.1 支持最多 16 路载体、Objects＋单独 LFE。播放端需支持对象渲染。" Foreground="#8FAFFF" TextWrapping="Wrap" LineHeight="23"/>
+        <TextBlock Text="读取最多 128 路 ADM，支持 Logic Pro 声床与位置自动化。编码合计最多 16 路；支持 2.0、5.1、7.1.2 声床＋对象。" Foreground="#8FAFFF" TextWrapping="Wrap" LineHeight="23"/>
        </StackPanel>
       </Border>
       <Border Style="{StaticResource Card}">

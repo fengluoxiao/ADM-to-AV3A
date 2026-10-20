@@ -1,10 +1,11 @@
-"""A strict conversion subset: Objects and one dedicated LFE, 1..16 carriers."""
+"""ADM input scenes, with independent object and DirectSpeakers tracks."""
 from bisect import bisect_right
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import json
 import math
 from pathlib import Path
 from typing import Callable
+import numpy as np
 from defusedxml import ElementTree as ET
 
 
@@ -38,11 +39,19 @@ class Scene:
     names: list
     source: str
     evaluator: Callable | None = None
+    bed: dict = field(default_factory=dict)
+    gain_evaluator: Callable | None = None
 
     def at(self, sample):
         if self.evaluator:
             return self.evaluator(sample)
         return self.frames[max(0, bisect_right(self.times, sample) - 1)]
+
+    def pcm_gains(self, start, count, carriers):
+        if self.gain_evaluator:
+            return self.gain_evaluator(start, count, carriers)
+        return np.array([[self.at(start + j)[i].gain for i in carriers]
+                         for j in range(count)], dtype=np.float32)
 
     @property
     def channels(self):
@@ -50,7 +59,7 @@ class Scene:
 
     @property
     def objects(self):
-        return self.channels - (self.lfe is not None)
+        return self.channels - len(self.bed or ({self.lfe: 'LFE'} if self.lfe is not None else {}))
 
 
 def load_jsonl(path, wave):
@@ -81,7 +90,7 @@ def load_jsonl(path, wave):
             frames.append([Point.parse(o) for o in objects])
     if not times or times[0] != 0:
         raise ValueError('空间元数据必须从 sample=0 开始。')
-    return Scene(times, frames, lfe, names, str(path))
+    return Scene(times, frames, lfe, names, str(path), bed={lfe: 'LFE'} if lfe is not None else {})
 
 
 def text(e, name, default=''):
@@ -122,6 +131,7 @@ def load_adm(raw, wave, source):
     timing = {}
     names = [''] * wave.channels
     lfe = None
+    bed = {}
     owners = {}
     for obj in root.findall('.//audioObject'):
         if text(obj, 'gain', '1') != '1' or obj.get('start', '00:00:00.00000') not in ('00:00:00.00000', '00:00:00.000', '00:00:00'):
@@ -157,12 +167,20 @@ def load_adm(raw, wave, source):
             labels = ' '.join((n.text or '') for n in channel.findall('.//speakerLabel'))
             type_label = channel.get('typeLabel', channel_id[3:7])
             is_lfe = is_lfe or (type_label == '0001' and ('LFE' in labels.upper() or 'LFE' in channel.get('audioChannelFormatName', '').upper()))
-            if type_label != '0003' and not is_lfe:
-                raise ValueError('v0.1 支持 Objects＋单独 LFE；其他 DirectSpeakers/HOA/Matrix 暂不支持。')
+            if type_label not in ('0001', '0003'):
+                raise ValueError('支持 Objects 和 DirectSpeakers；HOA/Matrix 暂不支持。')
+            if type_label == '0001':
+                # Dolby room-centric labels carry the speaker role. The LFE's
+                # placeholder XYZ must never make it a positional object.
+                label = labels.strip().removeprefix('RC_')
+                if not label:
+                    raise ValueError(f'DirectSpeakers 缺少明确 speakerLabel：{channel_id}')
+                bed[index] = label
         if is_lfe:
             if lfe is not None:
                 raise ValueError('当前仅支持一个独立 LFE。')
             lfe = index
+            bed[index] = 'LFE'
         blocks = channel.findall('audioBlockFormat') if channel is not None else []
         if not blocks and not is_lfe:
             raise ValueError('对象没有 audioBlockFormat。')
@@ -176,16 +194,16 @@ def load_adm(raw, wave, source):
             if any(p.get('bound') or p.get('screenEdgeLock') for p in block.findall('position')):
                 raise ValueError('暂不支持 ADM position bound / screenEdgeLock。')
             jump = block.find('jumpPosition')
-            if jump is not None and (jump.text or '').strip() == '1' and float(jump.get('interpolationLength', '0')) != 0:
-                raise ValueError('暂不支持非零 jumpPosition interpolationLength。')
+            jump_length = finite(jump.get('interpolationLength', '0'), 0, 86400,
+                                 'interpolationLength') if jump is not None else 0
             pos = {p.get('coordinate', '').lower(): float(p.text) for p in block.findall('position')}
             if is_lfe:
                 xyz = (0, 0, 0)
             elif text(block, 'cartesian', '0') == '1':
-                if not {'x', 'y', 'z'} <= pos.keys():
-                    raise ValueError('Cartesian 对象需要 X、Y、Z。')
+                if not {'x', 'y'} <= pos.keys():
+                    raise ValueError('Cartesian 对象需要 X、Y；省略 Z 时按 ADM 默认值 0。')
                 # ADM: X right, Y front, Z up. AVS3 cartesian uses the same axes.
-                xyz = pos['x'], pos['y'], pos['z']
+                xyz = pos['x'], pos['y'], pos.get('z', 0)
             else:
                 if not {'azimuth', 'elevation'} <= pos.keys():
                     raise ValueError('球坐标对象需要 azimuth、elevation。')
@@ -198,51 +216,93 @@ def load_adm(raw, wave, source):
                 gain = 10 ** (gain / 20)
             ext = [float(text(block, k, '0')) for k in ('width', 'height', 'depth')]
             if any(ext):
-                raise ValueError('v0.1 暂只接受 ADM 点对象（width/height/depth=0）；JSONL 可使用归一化 size。')
+                raise ValueError('暂只接受 ADM 点对象（width/height/depth=0）；JSONL 可使用归一化 size。')
             start = time_samples(block.get('rtime', '00:00:00.00000'), wave.rate)
             if start < 0 or (points and start <= points[-1][0]):
                 raise ValueError('ADM 块起点必须严格递增。')
             duration = time_samples(block.attrib['duration'], wave.rate) if 'duration' in block.attrib else None
             if duration is not None and duration <= 0:
                 raise ValueError('ADM 块 duration 必须大于 0。')
-            timing[index].append((duration, jump is not None and (jump.text or '').strip() == '1'))
+            timing[index].append((duration, jump is not None and (jump.text or '').strip() == '1',
+                                  round(jump_length * wave.rate)))
             points.append((start, Point.parse(dict(zip(('x', 'y', 'z'), xyz)) | {'gain': gain})))
         if not points:
             points = [(0, Point())]
-            timing[index] = [(wave.samples, True)]
+            timing[index] = [(wave.samples, True, 0)]
         if points[0][0] != 0:
             raise ValueError('对象块必须从 0 开始。')
         for j, (begin, _) in enumerate(points):
-            duration, jump = timing[index][j]
+            duration, jump, interpolation = timing[index][j]
             if len(points) > 1 and duration is None:
                 raise ValueError('动态 ADM 块需要明确 duration。')
-            if j + 1 < len(points) and begin + duration != points[j + 1][0]:
+            # Decimal ADM times can independently round to adjacent samples.
+            if j + 1 < len(points) and abs(begin + duration - points[j + 1][0]) > 1:
                 raise ValueError('暂不支持 ADM 块时间间隙或重叠。')
-        if timing[index][-1][0] is not None and points[-1][0] + timing[index][-1][0] < wave.samples:
+        if timing[index][-1][0] is not None and points[-1][0] + timing[index][-1][0] < wave.samples - 1:
             raise ValueError('ADM 块未覆盖全部 WAV；请导出与音频等长的元数据。')
         tracks[index] = points
-        names[index] = owners.get(uid, uid)
+        names[index] = f'{owners.get(uid, uid)} / {bed[index]}' if index in bed else owners.get(uid, uid)
     if len(tracks) != wave.channels:
         raise ValueError('ADM/chna 必须明确映射全部 WAV 声道。')
     times = sorted({t for points in tracks.values() for t, _ in points})
     track_times = {i: [t for t, _ in p] for i, p in tracks.items()}
+    origins = {}
+    for i, points in tracks.items():
+        origins[i] = [points[0][1]]
+        for j in range(1, len(points)):
+            previous = points[j - 1][1]
+            duration, jump, interpolation = timing[i][j - 1]
+            length = interpolation if jump else duration
+            if j > 1 and length:
+                fraction = min(1, (points[j][0] - points[j - 1][0]) / length)
+                origin = origins[i][j - 1]
+                previous = Point(*(getattr(origin, k) + (getattr(previous, k) - getattr(origin, k)) * fraction
+                                   for k in ('x', 'y', 'z', 'gain', 'size')))
+            origins[i].append(previous)
 
     def evaluate(sample):
         result = []
         for i in range(wave.channels):
             j = max(0, bisect_right(track_times[i], sample) - 1)
             begin, point = tracks[i][j]
-            duration, jump = timing[i][j]
-            if j and not jump:
-                previous = tracks[i][j - 1][1]
-                fraction = min(1, max(0, (sample - begin) / duration))
+            duration, jump, interpolation = timing[i][j]
+            length = interpolation if jump else duration
+            if j and length:
+                previous = origins[i][j]
+                fraction = min(1, max(0, (sample - begin) / length))
                 point = Point(*(getattr(previous, k) + (getattr(point, k) - getattr(previous, k)) * fraction
                                 for k in ('x', 'y', 'z', 'gain', 'size')))
             result.append(point)
         return result
 
-    frames = [evaluate(t) for t in times]
-    return Scene(times, frames, lfe, names, source, evaluate)
+    # Evaluate only requested instants, rather than materializing every track
+    # at every automation timestamp in large DAW exports.
+    gain_arrays = {i: np.array([p.gain for _, p in points]) for i, points in tracks.items()}
+    gain_origins = {i: np.array([p.gain for p in points]) for i, points in origins.items()}
+    gain_unity = {i: np.all(values == 1) for i, values in gain_arrays.items()}
+    interpolation_arrays = {i: np.array([length if jump else duration or 0 for duration, jump, length in entries])
+                            for i, entries in timing.items()}
+    time_arrays = {i: np.array(values) for i, values in track_times.items()}
+
+    def gains(start, count, carriers):
+        samples = np.arange(start, start + count)
+        result = np.ones((count, len(carriers)), dtype=np.float32)
+        for column, i in enumerate(carriers):
+            values = gain_arrays[i]
+            if gain_unity[i]:
+                continue
+            indices = np.maximum(0, np.searchsorted(time_arrays[i], samples, side='right') - 1)
+            result[:, column] = values[indices]
+            lengths = interpolation_arrays[i][indices]
+            interpolate = (indices > 0) & (lengths > 0)
+            selected = indices[interpolate]
+            fraction = np.clip((samples[interpolate] - time_arrays[i][selected]) /
+                               lengths[interpolate], 0, 1)
+            previous = gain_origins[i][selected]
+            result[interpolate, column] = previous + (values[selected] - previous) * fraction
+        return result
+
+    return Scene(times, [], lfe, names, source, evaluate, bed, gains)
 
 
 def load_scene(wave, path=None):
@@ -253,6 +313,4 @@ def load_scene(wave, path=None):
         if not raw:
             raise ValueError('WAV 没有 axml；请选择单独的 ADM XML 或 scene.jsonl。')
         scene = load_adm(raw.rstrip(b'\0'), wave, str(path or 'embedded axml'))
-    if not scene.objects:
-        raise ValueError('至少需要一个独立对象。')
     return scene

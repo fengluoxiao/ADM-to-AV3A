@@ -3,6 +3,25 @@ import math
 import struct
 
 
+# Common-definition pack IDs and order from the upstream AVS3 renderer's
+# speaker_definition.hpp. Dolby room-centric speaker roles map to these slots.
+BED_LAYOUTS = {
+    ('L', 'R'): (2, '2.0'),
+    ('L', 'R', 'C', 'LFE', 'Ls', 'Rs'): (3, '5.1'),
+    ('L', 'R', 'C', 'LFE', 'Lss', 'Rss', 'Lrs', 'Rrs', 'Lts', 'Rts'): (22, '7.1.2'),
+}
+
+
+def bed_layout(scene):
+    if not scene.bed or set(scene.bed.values()) == {'LFE'}:
+        return None
+    for labels, (pack_id, name) in BED_LAYOUTS.items():
+        if len(labels) == len(scene.bed) and set(labels) == set(scene.bed.values()):
+            by_label = {label: carrier for carrier, label in scene.bed.items()}
+            return pack_id, name, [by_label[label] for label in labels]
+    raise ValueError('暂不支持该 DirectSpeakers 布局；当前支持 2.0、5.1、7.1.2 和单独 LFE。')
+
+
 class Binary:
     def __init__(self):
         self.data = bytearray()
@@ -22,8 +41,13 @@ def quantize(value, bits):
 
 
 def static_metadata(scene):
+    if not 1 <= scene.channels <= 16:
+        raise ValueError('参考编码器空间元数据最多支持 16 路载体。')
+    layout = bed_layout(scene)
+    if layout:
+        return bed_metadata(scene, layout)
     b = Binary()
-    groups = 2 if scene.lfe is not None else 1
+    groups = int(scene.lfe is not None) + int(scene.objects > 0)
     b.i(1, 0, 0)  # static, no VR, basic level 1
     b.i(0, 0, 0, 0, 1, 0)  # programme -> content 0
     b.i(1, 0, 0, 0, 0, 0, groups, *range(groups))
@@ -41,11 +65,12 @@ def static_metadata(scene):
         for j in range(6):
             b.i(j, scene.lfe)
         offset = 6
-    b.i(groups - 1, 0, 1, 3)
-    b.f(1)
-    b.i(scene.objects)
-    for logical, carrier in enumerate(i for i in range(scene.channels) if i != scene.lfe):
-        b.i(offset + logical, carrier)
+    if scene.objects:
+        b.i(groups - 1, 0, 1, 3)
+        b.f(1)
+        b.i(scene.objects)
+        for logical, carrier in enumerate(i for i in range(scene.channels) if i != scene.lfe):
+            b.i(offset + logical, carrier)
     b.i(offset + scene.objects)
     for j in range(offset + scene.objects):
         if j < offset and j != 3:
@@ -53,6 +78,35 @@ def static_metadata(scene):
             b.f(0)
         else:
             b.i(j, 0)
+    return b.data
+
+
+def bed_metadata(scene, layout):
+    pack_id, _, carriers = layout
+    objects = [i for i in range(scene.channels) if i not in scene.bed]
+    groups = 1 + bool(objects)
+    b = Binary()
+    b.i(1, 0, 0)
+    b.i(0, 0, 0, 0, 1, 0)
+    b.i(1, 0, 0, 0, 0, 0, groups, *range(groups))
+    b.i(groups)
+    for group in range(groups):
+        b.i(group, *([0] * 8), 1, group)
+    b.i(groups)
+    b.i(0, 0, 1, 1)
+    b.f(1)
+    b.i(pack_id, len(carriers))
+    for logical, carrier in enumerate(carriers):
+        b.i(logical, carrier)
+    if objects:
+        b.i(1, 0, 1, 3)
+        b.f(1)
+        b.i(len(objects))
+        for logical, carrier in enumerate(objects, len(carriers)):
+            b.i(logical, carrier)
+    b.i(scene.channels)
+    for logical in range(scene.channels):
+        b.i(logical, 0)
     return b.data
 
 
@@ -65,7 +119,7 @@ def frame_metadata(scene, points, static):
         xyz = [quantize(v, bits) for v, bits in zip((point.x, point.y, point.z), (8, 6, 4))]
         size = [round(point.size * ((1 << n) - 1)) / ((1 << n) - 1) for n in (7, 5, 4)]
         # The LFE gain is baked into its PCM, not applied a second time.
-        gain = 1 if i == scene.lfe else round(point.gain * 127 / 6) * 6 / 127
+        gain = 1 if i in scene.bed or i == scene.lfe else round(point.gain * 127 / 6) * 6 / 127
         b.f(*xyz, *size, gain)
         b.i(0)
     return b.data

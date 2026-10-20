@@ -63,7 +63,7 @@ class Wave:
                     if w.size:
                         raise ValueError('暂不支持多个 WAV data 块。')
                     w.offset, w.size = pos, size
-                elif kind in (b'axml', b'chna', b'bext', b'LIST', b'iXML'):
+                elif kind in (b'axml', b'chna', b'bext', b'LIST', b'iXML', b'dbmd'):
                     if size > 128 * 1024 * 1024:
                         raise ValueError('WAV 元数据块过大。')
                     w.chunks[kind] = f.read(size)
@@ -74,8 +74,8 @@ class Wave:
             raise ValueError('支持 PCM 16/24/32-bit 或 Float32 WAV。')
         if w.rate != 48000:
             raise ValueError('当前对象编码路径要求 48 kHz；请先重采样母版。')
-        if not 1 <= w.channels <= 16:
-            raise ValueError('当前参考编码器最多支持 16 路音频载体。')
+        if not 1 <= w.channels <= 128:
+            raise ValueError('ADM 输入支持 1–128 路音频轨道。')
         if w.size % (w.channels * w.bits // 8):
             raise ValueError('WAV 数据不是完整采样帧。')
         return w

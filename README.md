@@ -2,34 +2,47 @@
 
 **WinUI 3 + Python 的 Audio Vivid 对象音频制作工具。**
 
-输入 ADM/BW64 母版，或 WAV＋单独空间元数据，输出带 `av3a` 音轨的 `.m4a`。保留独立对象音频、动态位置、增益与受支持的尺寸信息；不自动渲染成固定 7.1.4 声床。
+输入 ADM/BW64 母版，或 WAV＋单独空间元数据，输出带 `av3a` 音轨的 `.m4a`。容量内保留独立对象音频、动态位置、增益与受支持的尺寸信息。超出容量时可显式启用 JOCForge 聚类，合并声音并近似位置及混合增益。
 
 ## 功能
 
 - WinUI 3 深色界面：文件选择、输入检查、区间转换、进度日志、取消、输出目录入口。
 - Windows 原生 AVS3-P3 LC 编码，不依赖 WSL、FFmpeg 或修改后的解码器。
-- 48 kHz，96 kbps / 载体，最多 16 路实际音频载体；支持独立对象和一个单独 LFE。
+- 48 kHz，96 kbps / 载体；读取最多 128 路，编码最多 16 路。支持 2.0、5.1、7.1.2 DirectSpeakers 声床、独立对象和一个单独 LFE。
+- Logic Pro ADM：支持 `RC_` 声床标签、省略 Cartesian Z、非零跳变插值长度及一采样时间取整误差。
+- JOCForge 空间缩减：非 LFE 声床和对象共同缩减到最多 15 个聚类对象，LFE 独立保留；默认关闭。
 - 可从 M4A/MP4 **逐字节复制 `udta`**，保留其中的封面、歌词、歌名等标签。
 - 每次转换逐帧检查配置和 CRC；补偿 1024 采样编码延迟，并写入 M4A edit list。
 - 同时保存原始空间元数据和 JSON 转换报告。已有文件不会被覆盖。
 - Python CLI 与 WinUI 使用同一条转换链路，通过 UTF-8 JSON Lines 传递事件。
 
-## 输入范围（v0.1）
+## 输入范围（v0.2）
 
 | 输入 | 支持情况 |
 |---|---|
-| RIFF / RF64 / BW64 | PCM 16/24/32-bit、Float32；48 kHz；1–16 声道 |
+| RIFF / RF64 / BW64 | PCM 16/24/32-bit、Float32；48 kHz；1–128 声道；超出 16 路需显式聚类 |
 | 内嵌 ADM | 读取 `axml`＋`chna`，包括音频 data 后方的元数据块 |
 | 外置 ADM XML | WAV 必须含 `chna`，通过 TrackUID → TrackFormat/StreamFormat → ChannelFormat 或直接 ChannelFormat 映射 |
-| ADM Objects | 点对象；Cartesian 或球坐标；动态块线性插值、零插值长度的跳变；块级增益 |
+| ADM Objects | 点对象；Cartesian 或球坐标；动态块线性插值、跳变与非零 interpolationLength；块级增益 |
+| ADM DirectSpeakers | 完整 2.0、5.1、7.1.2 布局；通过 speakerLabel 映射静态声床，源增益写入 PCM |
 | 独立 LFE | 一个 LFE，映射到静态 DirectSpeakers LFE；源增益写入该载体 PCM |
 | Cavern JSONL | 与前期导出的 `*.scene.jsonl` 格式兼容；支持归一化 `size` |
 
-这是有明确输入边界的第一版。非 LFE 的 DirectSpeakers 声床、HOA、Matrix、嵌套对象、多节目、交互参数、ADM 非零 extent、未覆盖完整音频的块等会报错。不会把未知映射猜成固定声床。Atmos M4A **不是直接输入格式**；需先在外部导出对象 WAV＋ADM/scene。
+HOA、Matrix、其他 DirectSpeakers 布局、嵌套对象、多节目、交互参数、ADM 非零 extent、未覆盖完整音频的块等会报错。不会把未知映射猜成固定声床。Atmos M4A **不是直接输入格式**；需先在外部导出对象 WAV＋ADM/scene。
 
-AVS3 空间信息有量化：XYZ 为 8/6/4 bit，extent 为 7/5/4 bit，gain 为 7 bit、范围 0–6；动态元数据按 1024 采样帧采样。JSONL 更新按时间保持，ADM 块按其持续时间插值。原始 XML/JSONL 另外逐字节备份。原 ADM 的对象名称写入报告；不会声称 ADM 的完整原始层级原样进入码流。参考编码器内部使用 16-bit PCM，有削波风险的母版会被拒绝。
+AVS3 空间信息有量化：XYZ 为 8/6/4 bit，extent 为 7/5/4 bit，gain 为 7 bit、范围 0–6；动态元数据按 1024 采样帧采样。JSONL 更新按时间保持，ADM 块按其持续时间插值。原始 XML/JSONL 以及存在的 chna、dbmd、bext、iXML、LIST 块另外逐字节备份并记录 SHA-256；保留 dbmd 备份不代表 Dolby 专有渲染参数已映射进 Vivid。参考编码器内部使用 16-bit PCM，普通模式拒绝超范围 PCM；聚类模式必要时统一降低全场景增益避免削波。
 
-M4A 里的编码 profile 是 Mixed / ObjectsOnly；LFE 由空间元数据路由，因此仅看帧头的工具可能把 LFE 载体也计作一个对象。支持对象渲染的播放器才能正确播放空间场景；“原版 Rust 解码通过”与播放器已完成对象渲染是两种验证。忽略 edit list 的裸流解码器会输出首尾填充。
+M4A 里的编码 profile 是 Mixed / ObjectsOnly；声床和 LFE 由静态空间元数据路由，因此仅看帧头的工具可能把全部 16 路载体计作对象。支持对象渲染的播放器才能正确播放空间场景；“原版 Rust 解码通过”与播放器已完成对象渲染是两种验证。忽略 edit list 的裸流解码器会输出首尾填充。
+
+## JOCForge 聚类（有损）
+
+WinUI 中手动勾选“允许 JOCForge 聚类”，或在 CLI 传入 `--spatial-reduction`。该选项在输入超过 16 路时生效。例如 10 路 7.1.2 声床＋56 路对象会成为 **1 路 LFE＋15 路聚类对象**：65 路非 LFE 音频均参与聚类，原声床不再作为完整静态声床独立保留。所有源轨都有贡献映射，但对象独立性、位置和混合平衡会变化。
+
+算法移植自 [JOCForge reduction.rs](https://github.com/chyinan/JOCForge/blob/05a4108e0c6288130dec1203b301979a91475fca/crates/jocforge-core/src/reduction.rs)：16 段归一化音频特征、信号/空间/能量权重 0.55/0.35/0.10、最远点种子、RMS 加权混合与质心、0.15 分组切换惩罚，以及 0.90 簇峰值上限。移植核心与未修改 Rust reducer 的原创合成输入结果做数值对照，覆盖普通输入、超峰值输入和语义种子。
+
+为适配 Logic 动态 ADM 和 Audio Vivid，使用完整所选区间初始化种子，在每 1024 采样窗口更新特征和位置，使用 ADM Cartesian XYZ 计算距离，并在分组/增益切换时用 240 采样（5 ms）线性交叉淡化。这些是本工具的适配，不是 Dolby 官方算法，也不声称与 JOCForge 整条 E-AC-3 输出或 Dolby 编码器等价。JOCForge 的 JOC 编码器没有被打包进本工具。
+
+输出 `.conversion.json` 记录算法来源、适配点、源角色、合并/增益变化及空间误差；`.reduction.npz` 保存每帧绝对采样位置、源轨索引、目标分组、贡献增益和聚合 XYZ，可用 `numpy.load(..., allow_pickle=False)` 读取。分组索引从 0 开始，实际输出载体需加独立 LFE 数量；PCM 按报告淡化长度从上一帧系数过渡到当前系数，之后应用全局 uniform_gain。位置误差只统计非静音分析窗口起点、Vivid 量化及交叉淡化前的差异，不代表实测渲染或听感质量。
 
 ## Windows 开发运行
 
@@ -66,6 +79,12 @@ dotnet build src/AdmToAv3s/AdmToAv3s.csproj -c Release -p:Platform=x64
 
 可选参数：`--tags original.m4a`、`--start 0.5`、`--duration 10`、`--encoder path/to/avs3Encoder.exe`。外部程序可通过创建 `--cancel-file` 指定的文件请求取消，返回码为 2；错误为 1，成功为 0。
 
+超过 16 路的 ADM 可接受有损空间缩减时：
+
+```powershell
+./.venv/Scripts/python.exe -m av3s.cli convert --input master.wav --output reduced.m4a --spatial-reduction
+```
+
 JSONL 每行示例（声道顺序必须与 WAV 完全一致；坐标 X 向右、Y 向前、Z 向上）：
 
 ```json
@@ -83,4 +102,4 @@ JSONL 每行示例（声道顺序必须与 WAV 完全一致；坐标 X 向右、
 
 打包脚本会生成 `dist/ADM-to-AV3S-win-x64-时间戳.zip`，内含 WinUI、.NET/Windows App SDK 自包含文件、Python 嵌入式运行时和编码器；解压后运行 `AdmToAv3s.exe`，无需另装 Python 或 WSL。脚本会先用包内运行时做一次完整短音频转换。构建需要联网恢复 NuGet/Python 包。GitHub Actions 会编译界面并运行真实编码测试。
 
-仓库不含私人音乐、之前转换的歌曲、开发机路径或外部编码器二进制。项目代码使用 MIT；外部 AVS3 参考编码器受其自身 UWA Code Sharing Policy 约束，详见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+仓库不含私人音乐、之前转换的歌曲、开发机路径或外部编码器二进制。原始项目代码使用 MIT，JOCForge 移植核心使用 Apache-2.0；外部 AVS3 参考编码器受其自身 UWA Code Sharing Policy 约束，详见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。

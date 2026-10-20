@@ -26,6 +26,8 @@ def main():
             cmd.add_argument('--start', type=float, default=0)
             cmd.add_argument('--duration', type=float)
             cmd.add_argument('--cancel-file')
+            cmd.add_argument('--spatial-reduction', action='store_true',
+                             help='JOCForge reduction: keep LFE; merge non-LFE bed and objects into at most 15 objects (lossy positions and gains)')
     args = p.parse_args()
     try:
         values = vars(args)

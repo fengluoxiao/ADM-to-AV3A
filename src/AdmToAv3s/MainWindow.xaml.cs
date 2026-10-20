@@ -126,6 +126,7 @@ public sealed partial class MainWindow : Window
                 args.AddRange(new[] { "--duration", duration.ToString(CultureInfo.InvariantCulture) });
             }
             if (!string.IsNullOrWhiteSpace(TagsBox.Text)) args.AddRange(new[] { "--tags", Path.GetFullPath(TagsBox.Text) });
+            if (ReductionBox.IsChecked == true) args.Add("--spatial-reduction");
             await Run(args, true);
         }
         catch (Exception ex) { ShowError(ex.Message); }
@@ -176,8 +177,20 @@ public sealed partial class MainWindow : Window
                     if (ev.TryGetProperty("progress", out var progress)) Progress.Value = progress.GetDouble();
                     if (type == "inspection")
                     {
-                        SummaryText.Text = $"{ev.GetProperty("objects").GetInt32()} 个独立对象 · {ev.GetProperty("channels").GetInt32()} 路载体\n48 kHz · {ev.GetProperty("seconds").GetDouble():F2} 秒\n{ev.GetProperty("metadata_updates").GetInt32()} 次空间更新\n{ev.GetProperty("bitrate").GetInt32() / 1000} kbps 总码率";
-                        StatusText.Text = "输入检查通过";
+                        int channels = ev.GetProperty("channels").GetInt32();
+                        int bed = ev.GetProperty("bed_channels").GetInt32();
+                        bool fits = ev.GetProperty("fits_encoder").GetBoolean();
+                        string layout = ev.GetProperty("bed_layout").GetString() ?? "无";
+                        SummaryText.Text = $"{ev.GetProperty("objects").GetInt32()} 个独立对象 · {bed} 路声床（{layout}）\n{channels} 路 PCM 轨道 · 48 kHz\n{ev.GetProperty("seconds").GetDouble():F2} 秒 · {ev.GetProperty("metadata_updates").GetInt32()} 个空间更新时间\n" +
+                            (fits ? $"{ev.GetProperty("bitrate").GetInt32() / 1000} kbps 总码率" : "超过当前 16 路编码容量");
+                        StatusText.Text = fits ? "输入检查通过" : "ADM 已读取；轨道数超过编码容量";
+                        if (!fits)
+                        {
+                            Notice.Severity = InfoBarSeverity.Warning;
+                            Notice.Title = "母版读取成功，尚不能全量编码";
+                            Notice.Message = $"文件含 {channels} 路实际 PCM 轨道。当前参考编码器最多支持 16 路；如接受合并对象和位置近似，请在输出设置中开启空间聚类。";
+                            Notice.IsOpen = true;
+                        }
                         terminalEvent = true;
                     }
                     if (type == "error") { ShowError(msg.GetString() ?? "转换失败"); terminalEvent = true; }
@@ -188,7 +201,10 @@ public sealed partial class MainWindow : Window
                         OpenButton.IsEnabled = true;
                         Notice.Severity = InfoBarSeverity.Success;
                         Notice.Title = "转换完成";
-                        Notice.Message = "M4A、原始空间元数据和转换报告已保存。";
+                        bool reduced = ev.TryGetProperty("spatial_reduction", out var reduction) && reduction.GetBoolean();
+                        Notice.Message = reduced
+                            ? $"已输出 {ev.GetProperty("bed_channels").GetInt32()} 路独立 LFE＋{ev.GetProperty("encoded_objects").GetInt32()} 路 JOCForge 聚类对象。非 LFE 声床与对象已合并，位置及混合增益有变化；逐帧映射、原始元数据和误差报告已保存。"
+                            : "M4A、原始空间元数据和转换报告已保存。";
                         Notice.IsOpen = true;
                         terminalEvent = true;
                     }

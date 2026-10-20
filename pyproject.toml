@@ -4,11 +4,11 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "adm-to-av3s"
-version = "0.1.0"
-description = "Object-preserving ADM / WAV + scene to Audio Vivid M4A"
+version = "0.2.0"
+description = "ADM / WAV + scene to Audio Vivid M4A with optional JOCForge spatial reduction"
 requires-python = ">=3.11"
 dependencies = ["numpy>=1.26,<3", "defusedxml>=0.7.1,<1"]
-license = "MIT"
+license = "MIT AND Apache-2.0"
 
 [project.scripts]
 adm-to-av3s = "av3s.cli:main"
