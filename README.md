@@ -2,7 +2,7 @@
 
 **WinUI 3 + Python 的 Audio Vivid 对象音频制作工具。**
 
-输入 Atmos M4A/MP4、E-AC-3 JOC 裸流、ADM/BW64 母版或 WAV＋单独空间元数据，输出带 `av3a` 音轨的 `.m4a`。容量内保留解码得到的独立对象音频、动态位置、增益与受支持的尺寸信息。超出容量时可显式启用 JOCForge 聚类，合并声音并近似位置及混合增益。
+输入 Atmos M4A/MP4、MPEG-H 360RA、E-AC-3 JOC 裸流、ADM/BW64 母版或 WAV＋单独空间元数据，输出带 `av3a` 音轨的 `.m4a`。容量内保留解码得到的独立对象音频、动态位置、增益与受支持的尺寸信息。超出容量时可显式启用 JOCForge 聚类，合并声音并近似位置及混合增益。
 
 ## 功能
 
@@ -18,11 +18,12 @@
 - 同时保存原始空间元数据和 JSON 转换报告。已有文件不会被覆盖。
 - Python CLI 与 WinUI 使用同一条转换链路，通过 UTF-8 JSON Lines 传递事件。
 
-## 输入范围（v0.3）
+## 输入范围（v0.4）
 
 | 输入 | 支持情况 |
 |---|---|
 | Atmos M4A / MP4 | 一条未加密 `ec-3` 音轨；48 kHz；支持一段正常速率的 MP4 edit list，保留源时间裁剪；结尾超出实际音轨时取有效交集并记录差额 |
+| MPEG-H / 360RA | M4A/MP4/MHA/MHM 容器中一条未加密 `mha1` / `mhm1` 音轨，或 MHAS 裸流；48 kHz、单一纯对象组、最多 32 路；声道组、混合场景、HOA、未支持的 preroll 和配置变化会明确报错 |
 | E-AC-3 JOC 裸流 | `.eac3` / `.ec3`；必须成功读出 JOC 和 OAMD，不回退成普通多声道 |
 | RIFF / RF64 / BW64 | PCM 16/24/32-bit、Float32；48 kHz；1–128 声道；超出 16 路需显式聚类 |
 | 内嵌 ADM | 读取 `axml`＋`chna`，包括音频 data 后方的元数据块 |
@@ -38,7 +39,7 @@ HOA、Matrix、其他 DirectSpeakers 布局、嵌套对象、多节目、交互�
 
 在 WinUI 中选择已下载且可读取的 Atmos M4A，外置元数据留空，点击“检查输入”后转换即可。不需要事先准备 ADM。源 M4A 存在 `udta` 时自动复制封面、歌词和歌曲信息；选择其他标签来源可覆盖此默认行为。16 路以内的 JOC 解码结果不需要启用聚类。
 
-“单独导出 Atmos 对象 WAV＋元数据”会让你选择输出目录，使用输入文件名加 `(Cavern objects).wav` 保存。转换区间设置同样生效。再次导入该 WAV 时选择同名 JSONL：它保存源增益、尺寸及 LFE 标记，优先于 Cavern 的内嵌位置 ADM。
+“单独导出空间对象 WAV＋元数据”会让你选择输出目录，使用输入文件名加 `(decoded objects).wav` 保存。转换区间设置同样生效。再次导入该 WAV 时选择同名 JSONL：它保存源增益、尺寸及 LFE 标记，优先于 Cavern 的内嵌位置 ADM。
 
 ```powershell
 ./.venv/Scripts/python.exe -m av3s.cli convert --input atmos.m4a --output vivid.m4a
@@ -52,6 +53,28 @@ HOA、Matrix、其他 DirectSpeakers 布局、嵌套对象、多节目、交互�
 AVS3 空间信息有量化：XYZ 为 8/6/4 bit，extent 为 7/5/4 bit，gain 为 7 bit、范围 0–6；动态元数据按 1024 采样帧采样。JSONL 更新按时间保持，ADM 块按其持续时间插值。原始 XML/JSONL 以及存在的 chna、dbmd、bext、iXML、LIST 块另外逐字节备份并记录 SHA-256；保留 dbmd 备份不代表 Dolby 专有渲染参数已映射进 Vivid。参考编码器内部使用 16-bit PCM，普通模式拒绝超范围 PCM；聚类模式必要时统一降低全场景增益避免削波。
 
 M4A 里的编码 profile 是 Mixed / ObjectsOnly；声床和 LFE 由静态空间元数据路由，因此仅看帧头的工具可能把全部 16 路载体计作对象。支持对象渲染的播放器才能正确播放空间场景；“原版 Rust 解码通过”与播放器已完成对象渲染是两种验证。忽略 edit list 的裸流解码器会输出首尾填充。
+
+## 直接转换 MPEG-H / 360 Reality Audio
+
+选择实际含 MPEG-H 音轨的 360RA 文件，空间元数据留空。软件按 MP4 音轨类型自动选择解码器。超过 16 路时需显式开启现有空间聚类；也可先导出全部独立对象 WAV，再编辑或重新编码。仅有双耳 AAC 的文件不能恢复对象。
+
+当前支持 48 kHz、单一对象组的 1–32 路对象场景，以及 `mha1` / `mhm1` MP4 和裸 MHAS。含声道组、混合场景、HOA、多段编辑或多帧 preroll 的输入会明确拒绝，避免错位导出。已用原创动态 4 对象和 20 对象流测试，并覆盖两种 MP4 封装；真实歌曲仍需逐文件验证。
+
+若单帧外部 OAM 超过上游固定的 768 字节缓冲区，当前会拒绝导入，避免保存已经回绕损坏的二进制元数据。
+
+下半球对象保留为负 Z，不抬升到水平面。参考 AVS3 编解码器的对象仰角支持负值，Cartesian Z 范围标注为 −1～+1；本工具使用 4-bit Z，存在高度量化。元数据能表示下方位置，不代表任意播放器或没有底部扬声器的布局都能还原下方听感。
+
+```powershell
+./.venv/Scripts/python.exe -m av3s.cli inspect --input 360ra.m4a
+./.venv/Scripts/python.exe -m av3s.cli convert --input 360ra.m4a --output vivid.m4a --spatial-reduction
+./.venv/Scripts/python.exe -m av3s.cli export --input 360ra.m4a --output objects.wav
+```
+
+`scripts/build-mpegh.ps1` 构建 [Ittiam libmpegh](https://github.com/ittiam-systems/libmpegh) 固定版本 `f7ff0ac78d4d83f0b853bf2dff2ef075c92724f8`，启用 LC Level 4，保持上游源码不变。`native/mpegh` 是本项目的导出适配器：调用解码 API，保存外部渲染接口的原始 24-bit PCM，只读获取各子帧完整量化 OAM。使用内部结构的原因：该上游版本的外部 OAM writer 在部分 intra 帧没有输出 `has_obj_md` 对应的初始值，单独解析 `.bs` 会漏位置。适配器不修改解码算法、Rust 播放器或上游 PCM。
+
+导出为 24-bit 对象 WAV＋`.scene.jsonl`，不含内嵌 ADM。转换和导出都保存 `.source.mpegh.oam.jsonl`（完整量化对象状态）、`.source.mpegh.oam.bs`（上游原始外部接口）及报告；转换另存 `.source.mpegh.json`。备份包含整条源时间线，报告记录所选区间和 MP4 edit list。检查输入目前会完整解码一次，转换时再解码一次。
+
+空间映射会产生明确记录的近似：MPEG-H 正方位角向左，映射成 X 向右、Y 向前、Z 向上；全场景半径统一除以不小于 1 的最大半径，以适配 Vivid 单位空间；非等向扩散映射成三轴最大归一化值的等向 `size`。OAM 子帧按时间保持，目标仍每 1024 采样写元数据，与 MPEG-H 扬声器渲染器的增益插值不同。diffuseness、divergence、排除扇区与优先级没有等价映射，外部接口原始数据另存。上游 24-bit 外部 PCM 可能已有饱和处理；不声称恢复编码前母版、全部 MPEG-H 交互信息或 Sony 认证渲染效果。
 
 ## JOCForge 聚类（有损）
 
@@ -119,6 +142,6 @@ JSONL 每行示例（声道顺序必须与 WAV 完全一致；坐标 X 向右、
 ./scripts/publish.ps1
 ```
 
-打包脚本会生成 `dist/ADM-to-AV3S-v0.3.1-win-x64-时间戳.zip`，内含 WinUI、.NET/Windows App SDK 自包含文件、Python 嵌入式运行时、Cavern 导出组件和编码器；解压后运行 `AdmToAv3s.exe`，无需另装 Python、.NET 或 WSL。脚本会先用包内运行时做一次完整短音频转换。构建需要 .NET 8 SDK 和联网恢复 NuGet/Python 包。`scripts/build-cavern.ps1` 可单独重建导入组件；bootstrap 和 publish 会自动调用。GitHub Actions 会编译界面并运行真实编码测试。
+打包脚本会生成 `dist/ADM-to-AV3S-v0.4.0-win-x64-时间戳.zip`，内含 WinUI、.NET/Windows App SDK 自包含文件、Python 嵌入式运行时、Cavern / MPEG-H 导出组件和编码器；解压后运行 `AdmToAv3s.exe`，无需另装 Python、.NET 或 WSL。脚本会先用包内运行时做一次完整短音频转换。构建需要 .NET 8 SDK 和联网恢复 NuGet/Python 包。`scripts/build-cavern.ps1`、`scripts/build-mpegh.ps1` 可单独重建导入组件；bootstrap 和 publish 会自动调用。GitHub Actions 会编译界面并运行真实编码测试。
 
 仓库不含私人音乐、之前转换的歌曲、开发机路径或外部编码器二进制。原始项目代码使用 MIT，JOCForge 移植核心使用 Apache-2.0；外部 AVS3 参考编码器受其自身 UWA Code Sharing Policy 约束，详见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。

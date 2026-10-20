@@ -33,5 +33,6 @@ try {
         Checked { & .venv/Scripts/python.exe -m pip --disable-pip-version-check install -e . }
     }
     & "$PSScriptRoot/build-cavern.ps1" -DotNet $DotNet
-    Write-Host 'Ready: native Windows encoder + Cavern object importer + Python backend.'
+    & "$PSScriptRoot/build-mpegh.ps1"
+    Write-Host 'Ready: native Windows encoder + Cavern / MPEG-H object importers + Python backend.'
 } finally { Pop-Location }

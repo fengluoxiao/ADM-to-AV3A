@@ -11,8 +11,9 @@ try {
         & "$PSScriptRoot/bootstrap.ps1" -DotNet $DotNet
     }
     & "$PSScriptRoot/build-cavern.ps1" -DotNet $DotNet
+    & "$PSScriptRoot/build-mpegh.ps1"
     # A fresh versioned staging folder prevents stale DLLs or overwritten builds.
-    $stage = Join-Path $root ('dist/ADM-to-AV3S-v0.3.1-win-x64-' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
+    $stage = Join-Path $root ('dist/ADM-to-AV3S-v0.4.0-win-x64-' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
     New-Item -ItemType Directory -Force $stage | Out-Null
     Checked { & $DotNet publish src/AdmToAv3s/AdmToAv3s.csproj -c Release -p:Platform=x64 -o $stage }
     # WinUI's C++ DLLs need the app-local VC runtime on a clean Windows install.
@@ -30,6 +31,7 @@ try {
     New-Item -ItemType Directory -Force "$stage/tools" | Out-Null
     Copy-Item .tools/bin/avs3Encoder.exe "$stage/tools/avs3Encoder.exe"
     Copy-Item -Recurse .tools/cavern-export "$stage/tools/cavern"
+    Copy-Item -Recurse .tools/mpegh "$stage/tools/mpegh"
     Copy-Item README.md,LICENSE,THIRD_PARTY_NOTICES.md $stage
     Copy-Item -Recurse licenses "$stage/licenses"
     $zip = Join-Path $root '.tools/python-3.12.10-embed-amd64.zip'

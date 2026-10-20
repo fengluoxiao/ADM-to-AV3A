@@ -64,12 +64,12 @@ public sealed partial class MainWindow : Window
 
     private async void BrowseInput(object sender, RoutedEventArgs e)
     {
-        if (await Pick(".wav", ".bw64", ".rf64", ".m4a", ".mp4", ".eac3", ".ec3") is string path)
+        if (await Pick(".wav", ".bw64", ".rf64", ".m4a", ".mp4", ".eac3", ".ec3", ".mhas", ".mha", ".mhm") is string path)
         {
             InputBox.Text = path;
             OutputBox.Text = Path.Combine(Path.GetDirectoryName(path)!, Path.GetFileNameWithoutExtension(path) + " (Audio Vivid).m4a");
             string sidecar = Path.ChangeExtension(path, ".scene.jsonl");
-            bool compressed = new[] { ".m4a", ".mp4", ".eac3", ".ec3" }.Contains(Path.GetExtension(path).ToLowerInvariant());
+            bool compressed = new[] { ".m4a", ".mp4", ".eac3", ".ec3", ".mhas", ".mha", ".mhm" }.Contains(Path.GetExtension(path).ToLowerInvariant());
             MetadataBox.Text = !compressed && File.Exists(sidecar) ? sidecar : "";
         }
     }
@@ -95,7 +95,7 @@ public sealed partial class MainWindow : Window
 
     private List<string> Arguments(string command)
     {
-        if (!File.Exists(InputBox.Text)) throw new InvalidOperationException("请选择有效的母版或 Atmos 文件。");
+        if (!File.Exists(InputBox.Text)) throw new InvalidOperationException("请选择有效的母版、Atmos 或 360RA 文件。");
         var args = new List<string> { "-m", "av3s.cli", command, "--input", Path.GetFullPath(InputBox.Text) };
         if (!string.IsNullOrWhiteSpace(MetadataBox.Text)) args.AddRange(new[] { "--metadata", Path.GetFullPath(MetadataBox.Text) });
         return args;
@@ -119,7 +119,7 @@ public sealed partial class MainWindow : Window
             picker.FileTypeFilter.Add("*");
             var folder = await picker.PickSingleFolderAsync();
             if (folder == null) return;
-            string output = Path.Combine(folder.Path, Path.GetFileNameWithoutExtension(InputBox.Text) + " (Cavern objects).wav");
+            string output = Path.Combine(folder.Path, Path.GetFileNameWithoutExtension(InputBox.Text) + " (decoded objects).wav");
             args.AddRange(new[] { "--output", output });
             AddRangeArguments(args);
             await Run(args, true);
@@ -208,8 +208,10 @@ public sealed partial class MainWindow : Window
                         string layout = ev.GetProperty("bed_layout").GetString() ?? "无";
                         SummaryText.Text = $"{ev.GetProperty("objects").GetInt32()} 个独立对象 · {bed} 路声床（{layout}）\n{channels} 路 PCM 轨道 · 48 kHz\n{ev.GetProperty("seconds").GetDouble():F2} 秒 · {ev.GetProperty("metadata_updates").GetInt32()} 个空间更新时间\n" +
                             (fits ? $"{ev.GetProperty("bitrate").GetInt32() / 1000} kbps 总码率" : "超过当前 16 路编码容量");
-                        if (ev.TryGetProperty("decoder", out _))
-                            SummaryText.Text += "\nAtmos JOC → Cavern 对象解码；转换时自动读取空间元数据和源标签。";
+                        if (ev.TryGetProperty("decoder", out var decoder))
+                            SummaryText.Text += decoder.GetString() == "Ittiam/libmpegh"
+                                ? "\n360RA → MPEG-H 对象解码；位置与尺寸映射存在近似，原始 OAM 另存。"
+                                : "\nAtmos JOC → Cavern 对象解码；转换时自动读取空间元数据和源标签。";
                         StatusText.Text = fits ? "输入检查通过" : "输入已读取；轨道数超过编码容量";
                         if (!fits)
                         {
@@ -228,7 +230,7 @@ public sealed partial class MainWindow : Window
                         OpenButton.IsEnabled = true;
                         Notice.Severity = InfoBarSeverity.Success;
                         Notice.Title = "对象导出完成";
-                        Notice.Message = "已保存 Float32 对象 WAV（内嵌位置 ADM）、scene.jsonl 和导出报告。再次编码时选同名 JSONL，以保留增益、尺寸及 LFE 标记。";
+                        Notice.Message = "已保存对象 WAV、scene.jsonl 和导出报告。再次编码时选同名 JSONL，以保留空间元数据；360RA 另存原始 OAM。";
                         Notice.IsOpen = true;
                         terminalEvent = true;
                     }

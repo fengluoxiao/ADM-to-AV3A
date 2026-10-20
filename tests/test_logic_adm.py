@@ -68,7 +68,7 @@ class LogicAdmTests(unittest.TestCase):
         self.assertEqual(scene.lfe, 3)
         self.assertEqual(wave.chunks[b'dbmd'], b'Synthetic Dolby metadata fixture')
         self.assertEqual(scene.frames, [])
-        with self.assertRaisesRegex(ValueError, '66 路 ADM'):
+        with self.assertRaisesRegex(ValueError, '66 路音频'):
             convert(self.wav, self.root / 'result.m4a')
         self.assertFalse((self.root / 'result.m4a').exists())
 

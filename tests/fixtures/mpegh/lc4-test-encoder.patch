@@ -1,0 +1,74 @@
+diff --git a/encoder/impeghe_enc_main.c b/encoder/impeghe_enc_main.c
+index b8211da..53f75ae 100644
+--- a/encoder/impeghe_enc_main.c
++++ b/encoder/impeghe_enc_main.c
+@@ -1335,52 +1335,11 @@ IA_ERRORCODE impeghe_enc_init(ia_usac_encoder_config_struct *pstr_usac_config,
+ 
+   if (pstr_usac_config->use_oam_element == 1)
+   {
+-    if (pstr_asc->num_obj_sig_groups > 0)
++    pstr_usac_config->num_oam_elements = pstr_usac_config->num_oam_ch;
++    for (j = 0; j < pstr_usac_config->num_oam_ch; j++, i++)
+     {
+-      for (j = 0; j < pstr_asc->num_obj_sig_groups; j++)
+-      {
+-        for (k = 0; k < pstr_asc->num_objs_per_sig_group[j]; k++)
+-        {
+-          if ((abs(pstr_asc->num_ch_idx_per_grp[ch_offset_idx] -
+-                   pstr_asc->num_ch_idx_per_grp[ch_offset_idx + 1]) == 1) &&
+-              (k < pstr_asc->num_objs_per_sig_group[j] - 1))
+-          {
+-            pstr_asc->num_ch_idx_per_grp[ch_offset_idx] =
+-                min(pstr_asc->num_ch_idx_per_grp[ch_offset_idx],
+-                    pstr_asc->num_ch_idx_per_grp[ch_offset_idx + 1]);
+-            pstr_asc->num_ch_idx_per_grp[ch_offset_idx + 1] =
+-                pstr_asc->num_ch_idx_per_grp[ch_offset_idx] + 1;
+-
+-            pstr_asc_usac_config->usac_element_type[i] = ID_USAC_CPE;
+-            k++;
+-            ch_offset_idx++;
+-          }
+-          else
+-          {
+-            pstr_asc_usac_config->usac_element_type[i] = ID_USAC_SCE;
+-          }
+-          pstr_asc_usac_config->num_elements += 1;
+-          pstr_usac_config->num_oam_elements += 1;
+-          i++;
+-          ch_offset_idx++;
+-        }
+-      }
+-    }
+-    else
+-    {
+-      pstr_usac_config->num_oam_elements = (pstr_usac_config->num_oam_ch / 2);
+-      pstr_asc_usac_config->num_elements += pstr_usac_config->num_oam_elements;
+-      for (; i < pstr_asc_usac_config->num_elements; i++)
+-      {
+-        pstr_asc_usac_config->usac_element_type[i] = ID_USAC_CPE;
+-      }
+-      if (pstr_usac_config->num_oam_ch & 0x01)
+-      {
+-        pstr_asc_usac_config->usac_element_type[i] = ID_USAC_SCE;
+-        pstr_asc_usac_config->num_elements += 1;
+-        pstr_usac_config->num_oam_elements += 1;
+-        i++;
+-      }
++      pstr_asc_usac_config->usac_element_type[i] = ID_USAC_SCE;
++      pstr_asc_usac_config->num_elements += 1;
+     }
+   }
+ 
+diff --git a/test/impeghe_testbench.c b/test/impeghe_testbench.c
+index 2221766..6202539 100644
+--- a/test/impeghe_testbench.c
++++ b/test/impeghe_testbench.c
+@@ -647,7 +647,7 @@ static VOID impeghe_set_default_config_param(ia_input_config *pstr_input_config)
+   pstr_input_config->bitrate = 32000;
+   pstr_input_config->fdp_enable = 0;
+   pstr_input_config->noise_filling = 0;
+-  pstr_input_config->enhanced_noise_filling = 1;
++  pstr_input_config->enhanced_noise_filling = 0;
+   pstr_input_config->igf_after_tns_synth = 1;
+   pstr_input_config->tns_enable = 1;
+   pstr_input_config->cplx_pred = 0;

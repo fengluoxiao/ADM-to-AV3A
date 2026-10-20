@@ -37,7 +37,7 @@ def convert(input_path, output_path, metadata=None, tags=None, encoder=None, sta
             duration=None, cancel_file=None, spatial_reduction=False, source_context=None, emit=lambda **_: None):
     wave, scene, info = inspect(input_path, metadata)
     if wave.channels > 16 and not spatial_reduction:
-        raise ValueError(f'已读取 {wave.channels} 路 ADM：{len(scene.bed)} 路声床＋{scene.objects} 路对象。'
+        raise ValueError(f'已读取 {wave.channels} 路音频：{len(scene.bed)} 路声床＋{scene.objects} 路对象。'
                          '当前参考编码器和目标原版 Rust 解码器最多支持 16 路；'
                          '如接受合并对象和位置近似，请明确开启 --spatial-reduction。')
     output = Path(output_path).resolve()
@@ -70,7 +70,21 @@ def convert(input_path, output_path, metadata=None, tags=None, encoder=None, sta
         suffix = '.source.embedded.adm.xml' if meta_suffix == '.source.adm.xml' else '.source.adm.xml'
         backups.append((output.with_suffix(suffix), wave.chunks[b'axml']))
     if source_context:
-        backups.append((output.with_suffix('.source.cavern.json'),
+        source_context = dict(source_context)
+        imported_files = []
+        for attachment in source_context.get('metadata_files', []):
+            attachment = dict(attachment)
+            content = Path(attachment['path']).read_bytes()
+            if hashlib.sha256(content).hexdigest() != attachment['sha256']:
+                raise ValueError('导入元数据校验失败。')
+            target = output.with_suffix(attachment['suffix'])
+            backups.append((target, content))
+            attachment['path'] = str(target)
+            imported_files.append(attachment)
+        if imported_files:
+            source_context['metadata_files'] = imported_files
+        importer = source_context.get('importer', 'cavern')
+        backups.append((output.with_suffix(f'.source.{importer}.json'),
                         (json.dumps(source_context, ensure_ascii=False, indent=2) + '\n').encode('utf-8')))
     for kind in (b'chna', b'dbmd', b'bext', b'iXML', b'LIST'):
         if kind in wave.chunks:
@@ -194,8 +208,8 @@ def convert(input_path, output_path, metadata=None, tags=None, encoder=None, sta
                       encoder_commit='b44b5321862385a06ad6c427de5791e18f16c16b',
                       validation=validation)
         if source_context:
-            report.update(input=source_context['input'], cavern_import=source_context,
-                          start_samples=source_context['presentation_start_samples'])
+            report.update(input=source_context['input'], start_samples=source_context['presentation_start_samples'])
+            report[source_context.get('importer', 'cavern') + '_import'] = source_context
         report['source_metadata_sha256'] = hashlib.sha256(source_meta).hexdigest()
         report['metadata_backups'] = [dict(path=str(path), sha256=hashlib.sha256(content).hexdigest())
                                      for path, content in backups]

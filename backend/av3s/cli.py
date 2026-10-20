@@ -3,7 +3,7 @@ import argparse
 import json
 import sys
 from .pipeline import Cancelled
-from .cavern import inspect_input, convert_input, export_input
+from .inputs import inspect_input, convert_input, export_input
 
 
 def emit(**event):
@@ -14,13 +14,14 @@ def main():
     if hasattr(sys.stdout, 'reconfigure'):
         sys.stdout.reconfigure(encoding='utf-8')
         sys.stderr.reconfigure(encoding='utf-8')
-    p = argparse.ArgumentParser(description='ADM / WAV + metadata / E-AC-3 JOC Atmos → Audio Vivid M4A')
+    p = argparse.ArgumentParser(description='ADM / WAV / Atmos / MPEG-H 360RA → Audio Vivid M4A')
     sub = p.add_subparsers(dest='command', required=True)
     for name in ('inspect', 'convert', 'export'):
         cmd = sub.add_parser(name)
         cmd.add_argument('--input', required=True)
         cmd.add_argument('--metadata', help='ADM XML or Cavern scene.jsonl; omitted for embedded ADM')
         cmd.add_argument('--cavern', help='CavernExport.exe override')
+        cmd.add_argument('--mpegh', help='MpeghExport.exe override')
         cmd.add_argument('--cancel-file')
         if name in ('convert', 'export'):
             cmd.add_argument('--output', required=True)

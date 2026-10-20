@@ -16,6 +16,7 @@ from .pipeline import Cancelled, convert, inspect
 
 COMPRESSED = {'.m4a', '.mp4', '.eac3', '.ec3'}
 MP4 = {'.m4a', '.mp4'}
+OPTION = 'cavern'
 
 
 def is_compressed(path):
@@ -87,10 +88,10 @@ def run(command, input_path, output=None, skip=0, samples=None, cavern=None,
             proc.stdout.close()
 
 
-def presentation(path, raw_samples):
+def presentation(path, raw_samples, entries_allowed=(b'ec-3',)):
     """Apply a single unit-rate MP4 edit; reject unsupported timeline edits."""
     result = dict(media_start_samples=0, samples=raw_samples, edit_list_applied=False)
-    if Path(path).suffix.lower() not in MP4:
+    if Path(path).suffix.lower() not in MP4 | {'.mha', '.mhm'}:
         return result
     with open(path, 'rb') as f, mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as data:
         def children(atom):
@@ -114,10 +115,11 @@ def presentation(path, raw_samples):
             if not stsd:
                 continue
             entries = list(atoms(data, stsd[2] + 8, stsd[3]))
-            if any(a[0] == b'ec-3' for a in entries):
+            if any(a[0] in entries_allowed for a in entries):
                 tracks.append((track, mdia))
         if len(tracks) != 1:
-            raise ValueError('M4A/MP4 必须包含恰好一条未加密 ec-3 音轨。')
+            codecs = '/'.join(x.decode('ascii') for x in entries_allowed)
+            raise ValueError(f'M4A/MP4 必须包含恰好一条未加密 {codecs} 音轨。')
         track, mdia = tracks[0]
         mdhd = one(mdia, b'mdhd')
         p = mdhd[2]
