@@ -1,8 +1,33 @@
-# ADM to AV3S
+# ADM to AV3A
 
-**WinUI 3 + Python 的 Audio Vivid 对象音频制作工具。**
+**WinUI 3 + Python 的 Audio Vivid / AC-4 A-JOC 对象音频制作工具。**
 
-输入 Atmos M4A/MP4、MPEG-H 360RA、E-AC-3 JOC 裸流、ADM/BW64 母版或 WAV＋单独空间元数据，输出带 `av3a` 音轨的 `.m4a`。容量内保留解码得到的独立对象音频、动态位置、增益与受支持的尺寸信息。超出容量时可显式启用 JOCForge 聚类，合并声音并近似位置及混合增益。
+输入 Atmos M4A/MP4、MPEG-H 360RA、E-AC-3 JOC 裸流、ADM/BW64 母版或 WAV＋单独空间元数据，输出 Audio Vivid（`av3a`）或实验性 AC-4 A-JOC（`ac-4`）的 `.m4a`。超出所选模式容量时可显式启用 JOCForge 聚类，合并声音并近似位置及混合增益。AC-4 A-JOC 将对象声音下混后有损重建，不是每个对象独立编码或无损转换。
+
+## AC-4 A-JOC 输出（v0.5）
+
+WinUI 的“输出格式”选择 **AC-4 A-JOC**，码率可选 256 / 448 / 768 / 1500 kbps，默认 768。Atmos 和 360RA 同样可先解码对象再转入此输出。M4A 标签、源空间元数据备份、取消和不覆盖已有文件的行为与 Vivid 相同。
+
+| 模式 | 输入容量与声床处理 |
+|---|---|
+| 兼容对象（默认） | 合计最多 20 路，LFE 独立；非 LFE 声床按扬声器角色映射成固定位置对象，属于位置近似，逐项记录 `bed_object_mapping`。超过容量需显式聚类，最多 19 个聚类对象＋一个 LFE。 |
+| 原生声床（实验选项） | 合计最多 64 路，直接写入原生 bed assignment、LFE 和动态对象。超过容量需显式聚类；目前部分独立解码器拒绝此声床语法或高对象数，不作为默认播放兼容方案。 |
+
+采用未修改的 [ICL Forge](https://github.com/iainchesworthlabs/iclforge) 提交 `315899937e5c337ab34e3e27471539b9810e3b5f`。`native/ac4` 是流式适配器，逐块提供 Float32 PCM，调用真实 A-JOC computed downmix 编码（`b_static_dmx=false`），没有改解码器。固定使用 ASPX，48 kHz / 2048 采样帧；源增益逐采样写入 PCM，超峰值时全场景统一降增益并记录。对象位置每 256 采样采样并以线性 ramp 写入；ADM X/Y 映射到 AC-4 的 `[0,1]` 房间坐标，Z 保留正负。X/Y 步长 1/62、Z 1/15、尺寸 1/31，存在量化及时间近似。Dolby 专有 dbmd 参数仅另存备份，不声称全量映射。
+
+封装写入真实 `dac4`、变长 sample table 和随机访问帧表，逐帧校验 AC-4 CRC，使用编码器报告的编码/解码延迟合计 4385 采样写入 edit list。原始源元数据按原有机制备份。报告记录编码组件 SHA-256、构建来源、输出模式、对象合并/声床映射与量化误差；误差统计不代表实测听感或 A-JOC 重建误差。
+
+已用未修改的 [MacinDecode-AC4-Core v0.1.0](https://github.com/SakuzyPeng/MacinDecode-AC4-Core/releases/tag/v0.1.0) 将默认兼容输出解码回 ADM，验证动态对象、LFE 及区间时长，包括 66 轨 Logic ADM 的两秒聚类输出。测试还覆盖合成 7.1.2 声床到固定对象、标签复制及取消。该版本解码器的完整音频重建限制为最多 20 路全频信号，且不支持原生 bed assignment；软件默认保守使用总计 20 路。原生模式仅通过 ICL Forge 自身编解码检查。不能据此保证所有 Dolby 设备、播放器或认证兼容性。
+
+```powershell
+./.venv/Scripts/python.exe -m av3s.cli convert --input master.wav --output ajoc.m4a --codec ac4 --bitrate 768
+# 超容量母版，允许对象合并和位置近似
+./.venv/Scripts/python.exe -m av3s.cli convert --input master.wav --output reduced-ajoc.m4a --codec ac4 --spatial-reduction
+# 实验性原生声床与 64 路配置
+./.venv/Scripts/python.exe -m av3s.cli convert --input master.wav --output native-ajoc.m4a --codec ac4 --ac4-native
+```
+
+`scripts/build-iclforge.ps1` 单独构建该组件。适配器与所链接的 ICL Forge 使用 GPL；便携包附带许可和 `sources/ICLForge-corresponding-source.zip` 完整对应源码、依赖及离线构建脚本，见第三方声明。
 
 ## 功能
 
@@ -18,7 +43,7 @@
 - 同时保存原始空间元数据和 JSON 转换报告。已有文件不会被覆盖。
 - Python CLI 与 WinUI 使用同一条转换链路，通过 UTF-8 JSON Lines 传递事件。
 
-## 输入范围（v0.4）
+## 输入范围（Vivid 默认模式）
 
 | 输入 | 支持情况 |
 |---|---|
@@ -91,8 +116,8 @@ WinUI 中手动勾选“允许 JOCForge 聚类”，或在 CLI 传入 `--spatial
 要求：Windows 10 2004+ x64（建议 Windows 11）、Python 3.11+、.NET 8 SDK 或更新版本、Visual Studio 2022 C++ Build Tools（含 CMake 和 Windows SDK）、Git。
 
 ```powershell
-git clone https://github.com/fengluoxiao/ADM-to-AV3S.git
-cd ADM-to-AV3S
+git clone https://github.com/fengluoxiao/ADM-to-AV3A.git
+cd ADM-to-AV3A
 ./scripts/bootstrap.ps1
 dotnet build src/AdmToAv3s/AdmToAv3s.csproj -c Release -p:Platform=x64
 ```
@@ -142,6 +167,6 @@ JSONL 每行示例（声道顺序必须与 WAV 完全一致；坐标 X 向右、
 ./scripts/publish.ps1
 ```
 
-打包脚本会生成 `dist/ADM-to-AV3S-v0.4.0-win-x64-时间戳.zip`，内含 WinUI、.NET/Windows App SDK 自包含文件、Python 嵌入式运行时、Cavern / MPEG-H 导出组件和编码器；解压后运行 `AdmToAv3s.exe`，无需另装 Python、.NET 或 WSL。脚本会先用包内运行时做一次完整短音频转换。构建需要 .NET 8 SDK 和联网恢复 NuGet/Python 包。`scripts/build-cavern.ps1`、`scripts/build-mpegh.ps1` 可单独重建导入组件；bootstrap 和 publish 会自动调用。GitHub Actions 会编译界面并运行真实编码测试。
+打包脚本会生成 `dist/ADM-to-AV3A-v0.5.0-win-x64-时间戳.zip`，内含 WinUI、自包含运行时、Cavern / MPEG-H 导入组件、Vivid / AC-4 编码器和 AC-4 对应源码；解压后运行 `AdmToAv3s.exe`，无需另装 Python、.NET 或 WSL。脚本使用包内运行时分别测试两个输出。AC-4 组件会重建；Cavern / MPEG-H 已存在时复用，可传 `-RebuildImporters` 重建。开发构建需要较新的 VS 2022 C++ 工具（MSVC 14.44+）、.NET SDK 及联网恢复依赖。AC-4 当前构建启用 AVX2；Vivid 编码器仍使用标量 C。GitHub Actions 会编译界面并运行真实编码测试。
 
-仓库不含私人音乐、之前转换的歌曲、开发机路径或外部编码器二进制。原始项目代码使用 MIT，JOCForge 移植核心使用 Apache-2.0；外部 AVS3 参考编码器受其自身 UWA Code Sharing Policy 约束，详见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+仓库不含私人音乐、之前转换的歌曲或外部编码器二进制。原始应用代码使用 MIT，JOCForge 移植核心使用 Apache-2.0，AC-4 原生适配器使用 GPL-3.0-or-later；外部组件各自的条款见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。

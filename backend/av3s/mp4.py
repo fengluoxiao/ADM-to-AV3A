@@ -113,26 +113,33 @@ def validate_stream(path, channels, count, check_cancel=lambda: None):
     return dict(frames=count, frame_size=frame_size, crc_failures=0, elementary_sha256=digest.hexdigest())
 
 
-def mux(stream, output, channels, count, samples, udta=b''):
+def mux(stream, output, channels, count, samples, udta=b'', *, ac4=None):
     frame_size, rate, delay = channels * 256, 48000, 1024
-    bitrate = channels * 96000
-    if samples + delay > count * 1024 or count * 1024 >= 2 ** 32:
+    bitrate, frame_samples = channels * 96000, 1024
+    if ac4:
+        delay, bitrate, frame_samples = ac4['delay'], ac4['bitrate'], 2048
+        frame_size = 0
+    if samples + delay > count * frame_samples or count * frame_samples >= 2 ** 32:
         raise ValueError('输出时长超过当前封装器范围。')
     identity = struct.pack('>9I', 0x10000, 0, 0, 0, 0x10000, 0, 0, 0, 0x40000000)
     mvhd = full(b'mvhd', u32(0, 0, rate, samples, 0x10000) + struct.pack('>H', 0x100) + b'\0' * 10 + identity + b'\0' * 24 + u32(2))
     tkhd = full(b'tkhd', u32(0, 0, 1, 0, samples) + b'\0' * 8 + struct.pack('>hhhh', 0, 0, 0x100, 0) + identity + u32(0, 0), flags=3)
-    mdhd = full(b'mdhd', u32(0, 0, rate, count * 1024) + struct.pack('>HH', 0x55c4, 0))
-    hdlr = full(b'hdlr', u32(0) + b'soun' + b'\0' * 12 + b'Audio Vivid\0')
+    mdhd = full(b'mdhd', u32(0, 0, rate, count * frame_samples) + struct.pack('>HH', 0x55c4, 0))
+    hdlr = full(b'hdlr', u32(0) + b'soun' + b'\0' * 12 + (b'AC-4 A-JOC\0' if ac4 else b'Audio Vivid\0'))
     dinf = box(b'dinf', full(b'dref', u32(1) + full(b'url ', flags=1)))
     dca3 = bytes([0x22, 0x21, channels << 1]) + struct.pack('>H', bitrate // 1000) + b'\x40'
-    entry = b'\0' * 6 + struct.pack('>H', 1) + b'\0' * 8 + struct.pack('>HHHHI', channels, 16, 0, 0, rate << 16)
-    stsd = full(b'stsd', u32(1) + box(b'av3a', entry + box(b'dca3', dca3) + box(b'btrt', u32(frame_size, bitrate, bitrate))))
+    entry = b'\0' * 6 + struct.pack('>H', 1) + b'\0' * 8 + struct.pack('>HHHHI', 2 if ac4 else channels, 16, 0, 0, rate << 16)
+    stsd = full(b'stsd', u32(1) + box(b'ac-4' if ac4 else b'av3a', entry +
+                box(b'dac4' if ac4 else b'dca3', ac4['dac4'] if ac4 else dca3) +
+                box(b'btrt', u32(max(ac4['sizes']) if ac4 else frame_size, bitrate, bitrate))))
     edts = box(b'edts', full(b'elst', u32(1, samples, delay) + struct.pack('>hh', 1, 0)))
     ftyp = box(b'ftyp', b'isom' + u32(512) + b'isomiso2mp41')
 
     def moov(offset):
-        stbl = box(b'stbl', stsd + full(b'stts', u32(1, count, 1024)) + full(b'stsc', u32(1, 1, count, 1)) +
-                   full(b'stsz', u32(frame_size, count)) + full(b'co64', u32(1) + struct.pack('>Q', offset)))
+        stbl = box(b'stbl', stsd + full(b'stts', u32(1, count, frame_samples)) + full(b'stsc', u32(1, 1, count, 1)) +
+                   full(b'stsz', u32(frame_size, count) + (u32(*ac4['sizes']) if ac4 else b'')) +
+                   (full(b'stss', u32(len(ac4['sync_samples']), *ac4['sync_samples'])) if ac4 else b'') +
+                   full(b'co64', u32(1) + struct.pack('>Q', offset)))
         minf = box(b'minf', full(b'smhd', b'\0' * 4) + dinf + stbl)
         return box(b'moov', mvhd + box(b'trak', tkhd + edts + box(b'mdia', mdhd + hdlr + minf)) + udta)
 
@@ -148,4 +155,5 @@ def mux(stream, output, channels, count, samples, udta=b''):
         if mdat[2] != len(ftyp) + len(movie) + 16 or mdat[3] != len(data):
             raise ValueError('M4A 数据偏移验证失败。')
         digest = hashlib.sha256(data).hexdigest()
-    return dict(m4a_sha256=digest, edit_start_samples=delay, udta_copied=bool(udta), dca3=dca3.hex())
+    return dict(m4a_sha256=digest, edit_start_samples=delay, udta_copied=bool(udta),
+                **({'dac4': ac4['dac4'].hex(), 'sample_entry': 'ac-4'} if ac4 else {'dca3': dca3.hex()}))

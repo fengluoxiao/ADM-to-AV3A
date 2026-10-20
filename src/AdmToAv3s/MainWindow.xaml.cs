@@ -37,7 +37,37 @@ public sealed partial class MainWindow : Window
         PythonBox.Text = File.Exists(bundled) ? bundled : File.Exists(venv) ? venv : "python";
         EncoderBox.Text = Path.Combine(home, ".tools", "bin", "avs3Encoder.exe");
         if (!File.Exists(EncoderBox.Text)) EncoderBox.Text = Path.Combine(home, "tools", "avs3Encoder.exe");
+        Ac4EncoderBox.Text = Path.Combine(home, ".tools", "iclforge-bin", "Ac4Encode.exe");
+        if (!File.Exists(Ac4EncoderBox.Text)) Ac4EncoderBox.Text = Path.Combine(home, "tools", "iclforge", "Ac4Encode.exe");
+        UpdateFormat();
         Closed += (_, _) => { SignalCancel(); try { if (worker is { HasExited: false }) worker.Kill(true); } catch { } };
+    }
+
+    private bool IsAc4 => FormatBox.SelectedIndex == 1;
+    private bool NativeAc4 => Ac4NativeBox.IsChecked == true;
+    private void Ac4ModeChanged(object sender, RoutedEventArgs e) { if (FormatFooter != null) UpdateFormat(); }
+    private void FormatChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (OutputBox == null || FormatFooter == null) return;
+        UpdateFormat();
+    }
+    private void UpdateFormat()
+    {
+        BitrateBox.Visibility = IsAc4 ? Visibility.Visible : Visibility.Collapsed;
+        Ac4NativeBox.Visibility = IsAc4 ? Visibility.Visible : Visibility.Collapsed;
+        FormatBadge.Text = IsAc4 ? "AC-4 A-JOC · M4A" : "AUDIO VIVID · M4A";
+        ReductionLabel.Text = IsAc4
+            ? $"允许 JOCForge 聚类：超出 {(NativeAc4 ? 64 : 20)} 路时，非 LFE 声床＋对象缩减为最多 {(NativeAc4 ? 63 : 19)} 个对象"
+            : "允许 JOCForge 聚类：超出 16 路时，非 LFE 声床＋对象缩减为最多 15 个对象";
+        FormatDetails.Text = IsAc4
+            ? (NativeAc4 ? "AC-4 A-JOC 原生模式：合计最多 64 路，保留声床角色。部分解码器不支持原生声床或高对象数；请用兼容模式测试播放。" : "AC-4 A-JOC 兼容模式：合计最多 20 路；LFE 独立，其他声床转为固定位置对象（位置近似）。对象声音由下混信号有损重建。")
+            : "读取最多 128 路 ADM，支持 Logic Pro 声床与位置自动化。Audio Vivid 最多 16 路，支持 2.0、5.1、7.1.2 声床＋对象。";
+        FormatFooter.Text = IsAc4 ? "48 kHz  /  AC-4 A-JOC  /  Float32 输入" : "48 kHz  /  LC  /  96 kbps 每载体";
+        if (!string.IsNullOrWhiteSpace(OutputBox.Text))
+            OutputBox.Text = OutputBox.Text.Replace(IsAc4 ? " (Audio Vivid).m4a" : " (AC-4 A-JOC).m4a",
+                                                   IsAc4 ? " (AC-4 A-JOC).m4a" : " (Audio Vivid).m4a");
+        SummaryText.Text = "输出格式已更新，请检查输入。";
+        Notice.IsOpen = false;
     }
 
     private static string FindHome()
@@ -67,7 +97,7 @@ public sealed partial class MainWindow : Window
         if (await Pick(".wav", ".bw64", ".rf64", ".m4a", ".mp4", ".eac3", ".ec3", ".mhas", ".mha", ".mhm") is string path)
         {
             InputBox.Text = path;
-            OutputBox.Text = Path.Combine(Path.GetDirectoryName(path)!, Path.GetFileNameWithoutExtension(path) + " (Audio Vivid).m4a");
+            OutputBox.Text = Path.Combine(Path.GetDirectoryName(path)!, Path.GetFileNameWithoutExtension(path) + (IsAc4 ? " (AC-4 A-JOC).m4a" : " (Audio Vivid).m4a"));
             string sidecar = Path.ChangeExtension(path, ".scene.jsonl");
             bool compressed = new[] { ".m4a", ".mp4", ".eac3", ".ec3", ".mhas", ".mha", ".mhm" }.Contains(Path.GetExtension(path).ToLowerInvariant());
             MetadataBox.Text = !compressed && File.Exists(sidecar) ? sidecar : "";
@@ -104,8 +134,16 @@ public sealed partial class MainWindow : Window
     private async void InspectInput(object sender, RoutedEventArgs e)
     {
         if (busy) return;
-        try { await Run(Arguments("inspect"), false); }
+        try { var args = Arguments("inspect"); AddCodecArguments(args); await Run(args, false); }
         catch (Exception ex) { ShowError(ex.Message); }
+    }
+
+    private void AddCodecArguments(List<string> args)
+    {
+        args.AddRange(new[] { "--codec", IsAc4 ? "ac4" : "av3a" });
+        if (IsAc4 && BitrateBox.SelectedItem is ComboBoxItem item)
+            args.AddRange(new[] { "--bitrate", item.Tag.ToString()! });
+        if (IsAc4 && NativeAc4) args.Add("--ac4-native");
     }
 
     private async void ExportObjects(object sender, RoutedEventArgs e)
@@ -149,6 +187,8 @@ public sealed partial class MainWindow : Window
             if (string.IsNullOrWhiteSpace(OutputBox.Text)) throw new InvalidOperationException("请选择输出路径。");
             if (File.Exists(OutputBox.Text)) throw new InvalidOperationException("输出文件已存在，请使用新的文件名。");
             args.AddRange(new[] { "--output", Path.GetFullPath(OutputBox.Text), "--encoder", EncoderBox.Text });
+            AddCodecArguments(args);
+            if (IsAc4) args.AddRange(new[] { "--ac4-encoder", Ac4EncoderBox.Text });
             AddRangeArguments(args);
             if (!string.IsNullOrWhiteSpace(TagsBox.Text)) args.AddRange(new[] { "--tags", Path.GetFullPath(TagsBox.Text) });
             if (ReductionBox.IsChecked == true) args.Add("--spatial-reduction");
@@ -161,6 +201,7 @@ public sealed partial class MainWindow : Window
     {
         busy = true;
         ConvertButton.IsEnabled = InspectButton.IsEnabled = ExportButton.IsEnabled = false;
+        FormatBox.IsEnabled = BitrateBox.IsEnabled = Ac4NativeBox.IsEnabled = false;
         CancelButton.IsEnabled = true;
         OpenButton.IsEnabled = false;
         Notice.IsOpen = false;
@@ -205,9 +246,10 @@ public sealed partial class MainWindow : Window
                         int channels = ev.GetProperty("channels").GetInt32();
                         int bed = ev.GetProperty("bed_channels").GetInt32();
                         bool fits = ev.GetProperty("fits_encoder").GetBoolean();
+                        int capacity = ev.GetProperty("encoder_capacity").GetInt32();
                         string layout = ev.GetProperty("bed_layout").GetString() ?? "无";
                         SummaryText.Text = $"{ev.GetProperty("objects").GetInt32()} 个独立对象 · {bed} 路声床（{layout}）\n{channels} 路 PCM 轨道 · 48 kHz\n{ev.GetProperty("seconds").GetDouble():F2} 秒 · {ev.GetProperty("metadata_updates").GetInt32()} 个空间更新时间\n" +
-                            (fits ? $"{ev.GetProperty("bitrate").GetInt32() / 1000} kbps 总码率" : "超过当前 16 路编码容量");
+                            (fits ? $"{ev.GetProperty("bitrate").GetInt32() / 1000} kbps 总码率" : $"超过当前 {capacity} 路编码容量");
                         if (ev.TryGetProperty("decoder", out var decoder))
                             SummaryText.Text += decoder.GetString() == "Ittiam/libmpegh"
                                 ? "\n360RA → MPEG-H 对象解码；位置与尺寸映射存在近似，原始 OAM 另存。"
@@ -217,7 +259,7 @@ public sealed partial class MainWindow : Window
                         {
                             Notice.Severity = InfoBarSeverity.Warning;
                             Notice.Title = "母版读取成功，尚不能全量编码";
-                            Notice.Message = $"文件含 {channels} 路实际 PCM 轨道。当前参考编码器最多支持 16 路；如接受合并对象和位置近似，请在输出设置中开启空间聚类。";
+                            Notice.Message = $"文件含 {channels} 路实际 PCM 轨道。当前输出编码器最多支持 {capacity} 路；如接受合并对象和位置近似，请在输出设置中开启空间聚类。";
                             Notice.IsOpen = true;
                         }
                         terminalEvent = true;
@@ -244,6 +286,11 @@ public sealed partial class MainWindow : Window
                         Notice.Message = reduced
                             ? $"已输出 {ev.GetProperty("bed_channels").GetInt32()} 路独立 LFE＋{ev.GetProperty("encoded_objects").GetInt32()} 路 JOCForge 聚类对象。非 LFE 声床与对象已合并，位置及混合增益有变化；逐帧映射、原始元数据和误差报告已保存。"
                             : "M4A、原始空间元数据和转换报告已保存。";
+                        if (ev.TryGetProperty("output_codec", out var codec) && codec.GetString() == "ac4")
+                        {
+                            Notice.Severity = InfoBarSeverity.Warning;
+                            Notice.Message += " AC-4 A-JOC 为实验编码：对象音频经有损重建，播放器兼容性待验证；详情见转换报告。";
+                        }
                         Notice.IsOpen = true;
                         terminalEvent = true;
                     }
@@ -262,6 +309,7 @@ public sealed partial class MainWindow : Window
             cancelFile = null;
             busy = false;
             ConvertButton.IsEnabled = InspectButton.IsEnabled = ExportButton.IsEnabled = true;
+            FormatBox.IsEnabled = BitrateBox.IsEnabled = Ac4NativeBox.IsEnabled = true;
             CancelButton.IsEnabled = false;
         }
     }

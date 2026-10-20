@@ -155,9 +155,10 @@ def presentation(path, raw_samples, entries_allowed=(b'ec-3',)):
     return result
 
 
-def inspect_input(input_path, metadata=None, cavern=None, cancel_file=None, emit=lambda **_: None):
+def inspect_input(input_path, metadata=None, cavern=None, cancel_file=None, emit=lambda **_: None,
+                  codec='av3a', bitrate=768, ac4_native=False):
     if not is_compressed(input_path):
-        return inspect(input_path, metadata)[2]
+        return inspect(input_path, metadata, codec, bitrate, ac4_native)[2]
     if metadata:
         raise ValueError('Atmos 输入使用 Cavern 提取的空间元数据，请清空外置元数据字段。')
     info = run('inspect', input_path, cavern=cavern, cancel_file=cancel_file, emit=emit)
@@ -167,6 +168,10 @@ def inspect_input(input_path, metadata=None, cavern=None, cancel_file=None, emit
         emit(type='progress', phase='inspect', progress=0,
              message=f"MP4 时长已对齐实际音轨末尾（未读取超出的 {timing['unavailable_tail_samples']} 个采样）。")
     info.update(samples=timing['samples'], seconds=timing['samples'] / 48000, presentation=timing)
+    if codec == 'ac4':
+        from .ac4 import CAPACITY, NATIVE_CAPACITY
+        capacity = NATIVE_CAPACITY if ac4_native else CAPACITY
+        info.update(encoder_capacity=capacity, fits_encoder=info['channels'] <= capacity, bitrate=bitrate * 1000, output_codec=codec)
     return info
 
 

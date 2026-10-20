@@ -1,4 +1,4 @@
-param([string]$DotNet = 'dotnet')
+param([string]$DotNet = 'dotnet', [switch]$RebuildImporters)
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
 function Checked([scriptblock]$Command) {
@@ -10,16 +10,22 @@ try {
     if (!(Test-Path '.tools/bin/avs3Encoder.exe') -or !(Test-Path '.venv/Scripts/python.exe')) {
         & "$PSScriptRoot/bootstrap.ps1" -DotNet $DotNet
     }
-    & "$PSScriptRoot/build-cavern.ps1" -DotNet $DotNet
-    & "$PSScriptRoot/build-mpegh.ps1"
+    if ($RebuildImporters -or !(Test-Path '.tools/cavern-export/CavernExport.exe')) {
+        & "$PSScriptRoot/build-cavern.ps1" -DotNet $DotNet
+    }
+    if ($RebuildImporters -or !(Test-Path '.tools/mpegh/MpeghExport.exe')) {
+        & "$PSScriptRoot/build-mpegh.ps1"
+    }
+    & "$PSScriptRoot/build-iclforge.ps1"
+    Checked { & .venv/Scripts/python.exe scripts/package-ac4-source.py }
     # A fresh versioned staging folder prevents stale DLLs or overwritten builds.
-    $stage = Join-Path $root ('dist/ADM-to-AV3S-v0.4.0-win-x64-' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
+    $stage = Join-Path $root ('dist/ADM-to-AV3A-v0.5.0-win-x64-' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
     New-Item -ItemType Directory -Force $stage | Out-Null
     Checked { & $DotNet publish src/AdmToAv3s/AdmToAv3s.csproj -c Release -p:Platform=x64 -o $stage }
     # WinUI's C++ DLLs need the app-local VC runtime on a clean Windows install.
     $vswhere = "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe"
     $vs = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
-    if (!$vs) { throw 'Visual C++ Build Tools are required to package the app-local VC runtime.' }
+    if (!$vs) { $vs = "${env:ProgramFiles(x86)}/Microsoft Visual Studio/2022/BuildTools" }
     $crt = Get-ChildItem (Join-Path $vs 'VC/Redist/MSVC') -Directory |
         Where-Object { $_.Name -match '^\d+\.' } | Sort-Object { [version]$_.Name } -Descending |
         ForEach-Object { Join-Path $_.FullName 'x64/Microsoft.VC143.CRT' } |
@@ -32,6 +38,10 @@ try {
     Copy-Item .tools/bin/avs3Encoder.exe "$stage/tools/avs3Encoder.exe"
     Copy-Item -Recurse .tools/cavern-export "$stage/tools/cavern"
     Copy-Item -Recurse .tools/mpegh "$stage/tools/mpegh"
+    New-Item -ItemType Directory -Force "$stage/tools/iclforge" | Out-Null
+    Copy-Item .tools/iclforge-bin/Ac4Encode.exe,.tools/iclforge-bin/COPYING.txt,.tools/iclforge-bin/build.json "$stage/tools/iclforge"
+    New-Item -ItemType Directory -Force "$stage/sources" | Out-Null
+    Copy-Item .tools/iclforge-bin/ICLForge-corresponding-source.zip "$stage/sources"
     Copy-Item README.md,LICENSE,THIRD_PARTY_NOTICES.md $stage
     Copy-Item -Recurse licenses "$stage/licenses"
     $zip = Join-Path $root '.tools/python-3.12.10-embed-amd64.zip'
@@ -46,6 +56,7 @@ try {
     $smoke = Join-Path $root ('artifacts/package-smoke-' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
     Checked { & "$stage/runtime/python.exe" examples/make_demo.py $smoke }
     Checked { & "$stage/runtime/python.exe" -m av3s.cli convert --input "$smoke/moving.wav" --metadata "$smoke/moving.scene.jsonl" --output "$smoke/result.m4a" --encoder "$stage/tools/avs3Encoder.exe" --duration 0.1 }
+    Checked { & "$stage/runtime/python.exe" -m av3s.cli convert --input "$smoke/moving.wav" --metadata "$smoke/moving.scene.jsonl" --output "$smoke/ac4.m4a" --codec ac4 --ac4-encoder "$stage/tools/iclforge/Ac4Encode.exe" --duration 0.1 }
     $archive = "$stage.zip"
     Compress-Archive -Path "$stage/*" -DestinationPath $archive
     Write-Host "Portable build: $stage"

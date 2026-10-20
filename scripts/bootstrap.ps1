@@ -34,5 +34,6 @@ try {
     }
     & "$PSScriptRoot/build-cavern.ps1" -DotNet $DotNet
     & "$PSScriptRoot/build-mpegh.ps1"
-    Write-Host 'Ready: native Windows encoder + Cavern / MPEG-H object importers + Python backend.'
+    & "$PSScriptRoot/build-iclforge.ps1"
+    Write-Host 'Ready: Audio Vivid / AC-4 encoders + Cavern / MPEG-H object importers + Python backend.'
 } finally { Pop-Location }

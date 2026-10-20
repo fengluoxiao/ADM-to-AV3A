@@ -12,7 +12,7 @@ UPSTREAM = '05a4108e0c6288130dec1203b301979a91475fca'
 def cluster(wave, source, first, samples, check, emit, capacity=16):
     sources = [i for i in range(source.channels) if i != source.lfe]
     lfe_count = int(source.lfe is not None)
-    budget = min(15, capacity - lfe_count, len(sources))
+    budget = min(capacity - 1, capacity - lfe_count, len(sources))
     if not sources or budget < 1:
         raise ValueError('JOCForge 聚类需要至少一路非 LFE 音频。')
     count = math.ceil(samples / FRAME)
@@ -128,7 +128,7 @@ def cluster(wave, source, first, samples, check, emit, capacity=16):
                                'whole-selection seed initialization; 1024-sample dynamic windows',
                                '240-sample linear PCM coefficient crossfades'],
                   position_error_units='Euclidean ADM Cartesian distance',
-                  position_error_scope='audible source windows, at frame starts, before AVS3 quantization and crossfades',
+                  position_error_scope='audible source windows, at frame starts, before target codec quantization and crossfades',
                   energy_weighted_position_rms=math.sqrt(weighted_error / max(total_energy, core.FLOOR)),
                   maximum_position_error=maximum, source_audio_discarded=False,
                   source_gains_changed=True, source_assignment_changes=int(changes.sum()),

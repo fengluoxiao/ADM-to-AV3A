@@ -143,11 +143,17 @@ def analyse(input_path, work, cancel_file=None):
             pcm='unmodified upstream pre-render signed 24-bit; decoder saturation may already be present'))
 
 
-def inspect_input(input_path, metadata=None, mpegh=None, cancel_file=None, emit=lambda **_: None):
+def inspect_input(input_path, metadata=None, mpegh=None, cancel_file=None, emit=lambda **_: None,
+                  codec='av3a', bitrate=768, ac4_native=False):
     if metadata:
         raise ValueError('360RA 使用 MPEG-H 解码得到的空间元数据，请清空外置元数据字段。')
     with tempfile.TemporaryDirectory(prefix='av3s-mpegh-') as temp:
-        return run(input_path, temp, mpegh, cancel_file, emit)
+        info = run(input_path, temp, mpegh, cancel_file, emit)
+        if codec == 'ac4':
+            from .ac4 import CAPACITY, NATIVE_CAPACITY
+            capacity = NATIVE_CAPACITY if ac4_native else CAPACITY
+            info.update(encoder_capacity=capacity, fits_encoder=info['channels'] <= capacity, bitrate=bitrate * 1000, output_codec=codec)
+        return info
 
 
 def mapped(points, ids, radius):
