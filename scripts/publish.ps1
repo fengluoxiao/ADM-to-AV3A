@@ -14,6 +14,16 @@ try {
     $stage = Join-Path $root ('dist/ADM-to-AV3S-win-x64-' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
     New-Item -ItemType Directory -Force $stage | Out-Null
     Checked { & $DotNet publish src/AdmToAv3s/AdmToAv3s.csproj -c Release -p:Platform=x64 -o $stage }
+    # WinUI's C++ DLLs need the app-local VC runtime on a clean Windows install.
+    $vswhere = "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe"
+    $vs = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+    if (!$vs) { throw 'Visual C++ Build Tools are required to package the app-local VC runtime.' }
+    $crt = Get-ChildItem (Join-Path $vs 'VC/Redist/MSVC') -Directory |
+        Where-Object { $_.Name -match '^\d+\.' } | Sort-Object { [version]$_.Name } -Descending |
+        ForEach-Object { Join-Path $_.FullName 'x64/Microsoft.VC143.CRT' } |
+        Where-Object { Test-Path $_ } | Select-Object -First 1
+    if (!$crt) { throw 'Cannot locate the redistributable x64 Visual C++ runtime.' }
+    Copy-Item "$crt/*.dll" $stage
     New-Item -ItemType Directory -Force "$stage/backend/av3s" | Out-Null
     Copy-Item backend/av3s/*.py "$stage/backend/av3s"
     New-Item -ItemType Directory -Force "$stage/tools" | Out-Null
