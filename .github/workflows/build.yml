@@ -1,0 +1,21 @@
+name: Build and test
+on: [push, pull_request, workflow_dispatch]
+jobs:
+  windows:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Build reference encoder and Python environment
+        shell: pwsh
+        run: ./scripts/bootstrap.ps1
+      - name: Test parser, metadata, cancellation and native conversion
+        shell: pwsh
+        run: ./.venv/Scripts/python.exe -m unittest discover -s tests -v
+      - name: Compile WinUI 3
+        run: dotnet build src/AdmToAv3s/AdmToAv3s.csproj -c Release -p:Platform=x64

@@ -1,0 +1,12 @@
+.tools/
+.venv/
+dist/
+artifacts/
+artifacts-*.log
+**/bin/
+**/obj/
+__pycache__/
+*.pyc
+*.egg-info/
+.vs/
+*.user

@@ -1,0 +1,98 @@
+<Window x:Class="AdmToAv3s.MainWindow"
+ xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+ xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ Title="ADM to AV3S">
+ <Grid x:Name="Root" Background="#0D1320" RequestedTheme="Dark">
+  <Grid.RowDefinitions><RowDefinition Height="48"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+  <Grid x:Name="TitleBar" Padding="24,0,0,0">
+   <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+    <FontIcon Glyph="&#xE995;" FontSize="18" Foreground="{StaticResource AccentBrush}"/>
+    <TextBlock Text="ADM to AV3S" FontWeight="SemiBold" VerticalAlignment="Center"/>
+    <TextBlock Text="/  AUDIO VIVID" FontSize="10" CharacterSpacing="120" Foreground="#8795B0" VerticalAlignment="Center" Margin="8,0,0,0"/>
+   </StackPanel>
+  </Grid>
+  <ScrollViewer Grid.Row="1" Padding="32,16,32,24" HorizontalScrollBarVisibility="Disabled">
+   <StackPanel Spacing="22" MaxWidth="1180" HorizontalAlignment="Stretch">
+    <StackPanel Spacing="8">
+     <TextBlock Text="让空间，保留在声音里。" FontSize="30" FontWeight="SemiBold"/>
+     <TextBlock Text="从 ADM 母版或 WAV＋空间元数据，制作保留独立对象的 Audio Vivid M4A。" Foreground="#A8B5CB" TextWrapping="Wrap"/>
+    </StackPanel>
+    <Grid ColumnSpacing="22">
+     <Grid.ColumnDefinitions><ColumnDefinition Width="3*"/><ColumnDefinition Width="2*"/></Grid.ColumnDefinitions>
+     <StackPanel Spacing="18">
+      <Border Style="{StaticResource Card}">
+       <StackPanel Spacing="16">
+        <TextBlock Text="01   选择母版" FontSize="18" FontWeight="SemiBold"/>
+        <TextBlock Text="WAV / BW64 / RF64" Foreground="#A8B5CB"/>
+        <Grid ColumnSpacing="8"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+         <TextBox x:Name="InputBox" PlaceholderText="选择 48 kHz 多轨母版" TextChanged="InputChanged"/>
+         <Button Grid.Column="1" Content="浏览" Click="BrowseInput"/>
+        </Grid>
+        <TextBlock Text="空间元数据（内嵌 ADM 时可留空）" Foreground="#A8B5CB"/>
+        <Grid ColumnSpacing="8"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+         <TextBox x:Name="MetadataBox" PlaceholderText="ADM XML 或 Cavern scene.jsonl" TextChanged="InputChanged"/>
+         <Button Grid.Column="1" Content="浏览" Click="BrowseMetadata"/>
+        </Grid>
+        <Button x:Name="InspectButton" Content="检查输入" Click="InspectInput" HorizontalAlignment="Left"/>
+       </StackPanel>
+      </Border>
+      <Border Style="{StaticResource Card}">
+       <StackPanel Spacing="16">
+        <TextBlock Text="02   输出设置" FontSize="18" FontWeight="SemiBold"/>
+        <Grid ColumnSpacing="8"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+         <TextBox x:Name="OutputBox" PlaceholderText="输出 .m4a 文件"/>
+         <Button Grid.Column="1" Content="选择目录" Click="BrowseOutput"/>
+        </Grid>
+        <TextBlock Text="复制标签（可选）" Foreground="#A8B5CB"/>
+        <Grid ColumnSpacing="8"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+         <TextBox x:Name="TagsBox" PlaceholderText="从 M4A/MP4 复制封面、歌词和歌曲标签"/>
+         <Button Grid.Column="1" Content="浏览" Click="BrowseTags"/>
+        </Grid>
+        <Expander Header="转换区间与运行环境" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+         <StackPanel Spacing="12">
+          <TextBlock Text="起始 / 时长（秒，时长留空为全部）" TextWrapping="Wrap"/>
+          <Grid ColumnSpacing="10"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+           <TextBox x:Name="StartBox" Text="0" PlaceholderText="起始时间"/>
+           <TextBox Grid.Column="1" x:Name="DurationBox" PlaceholderText="全部"/>
+          </Grid>
+          <TextBlock Text="Python 解释器"/><TextBox x:Name="PythonBox"/>
+          <TextBlock Text="参考编码器"/><TextBox x:Name="EncoderBox"/>
+         </StackPanel>
+        </Expander>
+       </StackPanel>
+      </Border>
+     </StackPanel>
+     <StackPanel Grid.Column="1" Spacing="18">
+      <Border Style="{StaticResource Card}">
+       <StackPanel Spacing="16">
+        <TextBlock Text="对象保留模式" FontSize="18" FontWeight="SemiBold"/>
+        <Border Background="#253651" CornerRadius="6" Padding="10,5" HorizontalAlignment="Left"><TextBlock Text="AUDIO VIVID · M4A" FontSize="11" CharacterSpacing="70" Foreground="#B6CCFF"/></Border>
+        <TextBlock x:Name="SummaryText" Text="选择母版并检查输入后，在这里查看声道、对象数和时长。" Foreground="#A8B5CB" TextWrapping="Wrap" LineHeight="24"/>
+        <Rectangle Height="1" Fill="#2B3548"/>
+        <TextBlock Text="保留独立音频载体与空间位置；不渲染为固定声床。另存原始元数据与转换报告。" Foreground="#A8B5CB" TextWrapping="Wrap" LineHeight="23"/>
+        <TextBlock Text="v0.1 支持最多 16 路载体、Objects＋单独 LFE。播放端需支持对象渲染。" Foreground="#8FAFFF" TextWrapping="Wrap" LineHeight="23"/>
+       </StackPanel>
+      </Border>
+      <Border Style="{StaticResource Card}">
+       <StackPanel Spacing="14">
+        <TextBlock Text="转换状态" FontSize="18" FontWeight="SemiBold"/>
+        <TextBlock x:Name="StatusText" Text="准备就绪" TextWrapping="Wrap"/>
+        <ProgressBar x:Name="Progress" Minimum="0" Maximum="100" Value="0"/>
+        <TextBox x:Name="LogBox" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" Height="160" FontFamily="Cascadia Mono, Consolas" FontSize="11" ScrollViewer.VerticalScrollBarVisibility="Auto"/>
+        <Button x:Name="OpenButton" Content="打开输出目录" Click="OpenOutput" IsEnabled="False"/>
+       </StackPanel>
+      </Border>
+     </StackPanel>
+    </Grid>
+    <InfoBar x:Name="Notice" IsOpen="False" IsClosable="True"/>
+   </StackPanel>
+  </ScrollViewer>
+  <Border Grid.Row="2" Background="#131B29" BorderBrush="#2B3548" BorderThickness="0,1,0,0" Padding="32,18">
+   <Grid ColumnSpacing="12"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+    <TextBlock Text="48 kHz  /  LC  /  96 kbps 每载体" Foreground="#8795B0" VerticalAlignment="Center"/>
+    <Button Grid.Column="1" x:Name="CancelButton" Content="取消" Click="CancelConversion" IsEnabled="False" MinWidth="90"/>
+    <Button Grid.Column="2" x:Name="ConvertButton" Content="开始转换" Click="StartConversion" Style="{StaticResource AccentButtonStyle}" MinWidth="140"/>
+   </Grid>
+  </Border>
+ </Grid>
+</Window>
